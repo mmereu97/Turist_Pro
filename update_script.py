@@ -55,170 +55,83 @@ def apply_update(patches):
 
 
 PATCHES_DATA = [
-    # 1. Adăugăm controalele UI pentru Diversitate sub cele existente
+    # 1. Adăugăm semnalul și slotul în MapBridge (Podul de comunicație)
     {
-        'desc': 'UI: Adaugare rand Diversitate (Diversity Checkbox + Limit)',
-        'find': """        auto_add_frame.addStretch()
-        hotspot_layout.addLayout(auto_add_frame)
-        
-        hotspot_layout.addStretch()""",
-        'replace': """        auto_add_frame.addStretch()
-        hotspot_layout.addLayout(auto_add_frame)
+        'desc': 'MapBridge: Adaugare semnal pentru sincronizare zoom',
+        'find': """    # NOU: Semnal pentru setare poziție curentă
+    setMyPositionSignal = Signal(float, float)
 
-        # --- NOU: Diversitate ---
-        diversity_frame = QHBoxLayout()
-        self.diversity_checkbox = QCheckBox("⚖️ Diversitate: Asigură")
-        self.diversity_checkbox.setToolTip("Asigură un minim de X locuri din fiecare categorie majoră (Cultură, Natură, Mâncare, Shopping)")
-        self.diversity_checkbox.setStyleSheet("font-size: 9pt; color: #2e7d32; font-weight: bold;")
-        diversity_frame.addWidget(self.diversity_checkbox)
-        
-        self.diversity_limit_entry = QLineEdit("3")
-        self.diversity_limit_entry.setFixedWidth(30)
-        diversity_frame.addWidget(self.diversity_limit_entry)
-        
-        diversity_frame.addWidget(QLabel("din fiecare categ."))
-        diversity_frame.addStretch()
-        hotspot_layout.addLayout(diversity_frame)
-        
-        hotspot_layout.addStretch()"""
+    @Slot(float, float)
+    def receiveMapClick(self, lat, lng):""",
+        'replace': """    # NOU: Semnal pentru setare poziție curentă
+    setMyPositionSignal = Signal(float, float)
+    # NOU: Semnal sincronizare zoom
+    zoomChangedSignal = Signal(int)
+
+    @Slot(int)
+    def updateZoomLevel(self, zoom):
+        \"""Primește nivelul de zoom din JS și îl trimite în Python.\"""
+        self.zoomChangedSignal.emit(zoom)
+
+    @Slot(float, float)
+    def receiveMapClick(self, lat, lng):"""
     },
 
-    # 2. Rescriem logica de Adăugare Automată pentru a include Pasul 2 (Diversitate)
+    # 2. Conectăm semnalul în MainWindow.__init__
     {
-        'desc': 'Logic: Implementare algoritm diversitate (Fill Gaps)',
-        'find': """            # --- LOGICĂ NOUĂ: Adăugare Automată ---
-            if self.auto_add_hotspots_checkbox.isChecked() and all_hotspots:
-                try:
-                    max_to_add = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    max_to_add = 15 # Fallback dacă nu e număr
-                
-                auto_added = 0
-                
-                log_info(f"Se procesează adăugarea automată: max {max_to_add} locuri (notă >= 4.0)...")
-                
-                # Iterăm prin TOATE hotspot-urile găsite până atingem limita
-                for h in all_hotspots:
-                    if auto_added >= max_to_add:
-                        break
-                        
-                    pid = h['place_id']
-                    rating = h.get('rating', 0)
-                    
-                    # 1. Verificăm dacă există deja
-                    if pid in selected_places:
-                        continue
-                        
-                    # 2. Filtru Notă minimă 4.0
-                    if rating < 4.0:
-                        continue
+        'desc': 'MainWindow: Conectare semnal zoom',
+        'find': """        self.map_bridge.setExploreSignal.connect(self.on_set_explore_from_map)
+        self.map_bridge.setMyPositionSignal.connect(self.on_set_my_position_from_map)
+        self.channel.registerObject("pyObj", self.map_bridge)""",
+        'replace': """        self.map_bridge.setExploreSignal.connect(self.on_set_explore_from_map)
+        self.map_bridge.setMyPositionSignal.connect(self.on_set_my_position_from_map)
+        # Conectare sincronizare zoom
+        self.map_bridge.zoomChangedSignal.connect(self.on_map_zoom_changed)
+        self.channel.registerObject("pyObj", self.map_bridge)"""
+    },
 
-                    # Adăugăm
-                    self.toggle_selection(
-                        pid, 
-                        h['name'], 
-                        rating, 
-                        h['reviews'], 
-                        'Program necunoscut', 
-                        Qt.Checked.value,
-                        h.get('types', [])
-                    )
-                    auto_added += 1
-                
-                if auto_added > 0:
-                    msg = f"S-au adăugat automat {auto_added} locuri de top (⭐4.0+) în traseu."
-                    log_success(msg)""",
-        'replace': """            # --- LOGICĂ AVANSATĂ: Adăugare Automată + Diversitate ---
-            total_added_count = 0
-            
-            # PASUL 1: Top General (populare)
-            if self.auto_add_hotspots_checkbox.isChecked() and all_hotspots:
-                try:
-                    max_to_add = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    max_to_add = 15
-                
-                added_in_step1 = 0
-                for h in all_hotspots:
-                    if added_in_step1 >= max_to_add: break
-                    pid = h['place_id']
-                    rating = h.get('rating', 0)
-                    
-                    if pid in selected_places: continue
-                    if rating < 4.0: continue
-
-                    self.toggle_selection(pid, h['name'], rating, h['reviews'], 'Prog. necunoscut', Qt.Checked.value, h.get('types', []))
-                    added_in_step1 += 1
-                
-                total_added_count += added_in_step1
-
-            # PASUL 2: Asigurare Diversitate (Fill Gaps)
-            if self.diversity_checkbox.isChecked() and all_hotspots:
-                try:
-                    min_per_cat = int(self.diversity_limit_entry.text().strip())
-                except:
-                    min_per_cat = 3
-                
-                # Definim categoriile majore
-                categories_map = {
-                    'culture': ['museum', 'art_gallery', 'tourist_attraction', 'church', 'place_of_worship'],
-                    'nature': ['park', 'amusement_park', 'natural_feature'],
-                    'food': ['restaurant', 'cafe', 'bakery', 'bar'],
-                    'shopping': ['shopping_mall', 'department_store', 'clothing_store']
+    # 3. Injectăm "ascultătorul" (Listener) de JavaScript în on_map_ready
+    # Asta face ca harta să raporteze automat schimbările
+    {
+        'desc': 'JS Injection: Adaugare listener zoom_changed in on_map_ready',
+        'find': """        self.map_is_loaded = True
+        log_success("Browserul a terminat de încărcat harta. Aplicăm starea inițială.")""",
+        'replace': """        self.map_is_loaded = True
+        
+        # --- INJECTARE JS PENTRU SINCRONIZARE ZOOM ---
+        # Asta face ca atunci când dai zoom din mouse, Python să afle imediat
+        js_zoom_listener = \"""
+        if (typeof map !== 'undefined') {
+            map.addListener('zoom_changed', function() {
+                if (window.pyObj) {
+                    window.pyObj.updateZoomLevel(map.getZoom());
                 }
-                
-                # Helper local pentru detectare categorie
-                def get_cat(types):
-                    for cat_name, keywords in categories_map.items():
-                        if any(k in types for k in keywords):
-                            return cat_name
-                    return 'other'
+            });
+        }
+        \"""
+        self.web_view.page().runJavaScript(js_zoom_listener)
+        
+        log_success("Browserul a terminat de încărcat harta. Aplicăm starea inițială.")"""
+    },
 
-                # 1. Numărăm ce avem DEJA în listă (inclusiv ce am adăugat la Pasul 1)
-                current_counts = {k: 0 for k in categories_map.keys()}
-                for pid, data in selected_places.items():
-                    # Dacă avem datele complete în selected_places (types)
-                    p_types = data.get('types', [])
-                    # Dacă nu le avem (poate au fost adăugate manual fără types), încercăm să le deducem din hotspot list
-                    if not p_types:
-                        found = next((x for x in all_hotspots if x['place_id'] == pid), None)
-                        if found: p_types = found.get('types', [])
-                    
-                    c = get_cat(p_types)
-                    if c in current_counts:
-                        current_counts[c] += 1
-                
-                log_info(f"Status Diversitate curent: {current_counts}. Ținta: {min_per_cat}/cat")
-                
-                # 2. Completăm lipsurile
-                added_diversity = 0
-                for cat_name in categories_map:
-                    needed = min_per_cat - current_counts[cat_name]
-                    if needed <= 0: continue
-                    
-                    # Căutăm candidați pentru această categorie
-                    candidates = []
-                    for h in all_hotspots:
-                        pid = h['place_id']
-                        rating = h.get('rating', 0)
-                        if pid in selected_places: continue
-                        if rating < 4.0: continue # Respectăm regula de aur
-                        
-                        if get_cat(h.get('types', [])) == cat_name:
-                            candidates.append(h)
-                    
-                    # Luăm primii N necesari (lista e deja sortată după recenzii)
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'Prog. necunoscut', Qt.Checked.value, h.get('types', []))
-                        added_diversity += 1
-                        total_added_count += 1
-                        log_info(f"➕ Diversitate [{cat_name}]: {h['name']}")
+    # 4. Adăugăm funcția Python care actualizează variabila globală
+    # O inserăm la finalul clasei MainWindow, înainte de closeEvent
+    {
+        'desc': 'MainWindow: Adaugare metoda on_map_zoom_changed',
+        'find': """    def closeEvent(self, event):
+        self.save_state()
+        event.accept()""",
+        'replace': """    def on_map_zoom_changed(self, zoom):
+        \"""Actualizează variabila globală când utilizatorul dă zoom pe hartă.\"""
+        global current_zoom_level
+        current_zoom_level = zoom
+        # log_debug(f"Zoom sincronizat: {zoom}")
 
-            if total_added_count > 0:
-                log_success(f"Total locuri adăugate automat: {total_added_count}")"""
+    def closeEvent(self, event):
+        self.save_state()
+        event.accept()"""
     }
 ]
-
 
 
 if __name__ == "__main__":
