@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Harta Interactivă</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            background-color: #f0f0f0; /* Un gri deschis ca să vedem că există div-ul */
+        }
+    </style>
+    <!-- QWebChannel trebuie să fie sus -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+<body>
+    <!-- 1. Elementul Hartă (Trebuie să fie primul în body) -->
+    <div id="map"></div>
+
+    <!-- 2. Logica Aplicației (Imediat după div) -->
+    <script>
+        var map;
+        var currentMarker = null;
+        var currentPolyline = null;
+        var routeMarkers = [];
+        var connectionLines = [];
+        var hotspotMarkers = [];
+        var waypointMarkers = [];
+        var pyObj = null;
+        var contextMenu = null;
+
+        function initMap() {
+            // Verificăm explicit dacă elementul există
+            var mapDiv = document.getElementById('map');
+            if (!mapDiv) {
+                console.error("EROARE CRITICĂ: Nu am găsit div-ul 'map'!");
+                return;
+            }
+
+            var defaultCenter = { lat: 46.0, lng: 25.0 };
+            
+            try {
+                map = new google.maps.Map(mapDiv, {
+                    zoom: 7,
+                    center: defaultCenter,
+                    mapTypeId: 'roadmap',
+                    mapTypeControl: true,
+                    streetViewControl: true,
+                    fullscreenControl: false,
+                    zoomControl: true
+                });
+
+                if (typeof QWebChannel !== 'undefined') {
+                    new QWebChannel(qt.webChannelTransport, function(channel) {
+                        pyObj = channel.objects.pyObj;
+                        console.log("QWebChannel conectat!");
+                    });
+                }
+
+                map.addListener('click', function(event) {
+                    var lat = event.latLng.lat();
+                    var lng = event.latLng.lng();
+                    
+                    // Închidem meniul contextual dacă e deschis
+                    hideContextMenu();
+                    
+                    // Verificăm dacă s-a dat click pe un POI (Place of Interest)
+                    if (event.placeId) {
+                        // Oprim comportamentul default (info window Google)
+                        event.stop();
+                        
+                        console.log("Click pe POI: " + event.placeId);
+                        
+                        // Trimitem place_id la Python pentru afișare în rezultate
+                        if (pyObj && pyObj.receivePOIClick) {
+                            pyObj.receivePOIClick(event.placeId);
+                        }
+                    } else {
+                        // Click normal pe hartă (nu pe POI)
+                        if (pyObj && pyObj.receiveMapClick) {
+                            pyObj.receiveMapClick(lat, lng);
+                        }
+                    }
+                });
+                
+                // Listener pentru click dreapta (meniu contextual)
+                map.addListener('rightclick', function(event) {
+                    var lat = event.latLng.lat();
+                    var lng = event.latLng.lng();
+                    
+                    console.log("Click dreapta la: " + lat + ", " + lng);
+                    showContextMenu(event.latLng, event.pixel || event.domEvent);
+                });
+                
+                // Listener pentru schimbarea tipului de hartă
+                map.addListener('maptypeid_changed', function() {
+                    var mapType = map.getMapTypeId();
+                    console.log("Tip hartă schimbat: " + mapType);
+                    if (pyObj && pyObj.receiveMapTypeChange) {
+                        pyObj.receiveMapTypeChange(mapType);
+                    }
+                });
+                
+                console.log("Harta inițializată cu succes!");
+            } catch (e) {
+                console.error("Eroare la crearea hărții:", e);
+            }
+        }
+
+        // --- Funcții pentru Meniu Contextual ---
+        
+        function createContextMenu() {
+            if (contextMenu) return;
+            
+            contextMenu = document.createElement('div');
+            contextMenu.id = 'context-menu';
+            contextMenu.style.cssText = `
+                position: absolute;
+                background: white;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                padding: 8px 0;
+                z-index: 10000;
+                display: none;
+                min-width: 200px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+            `;
+            
+            document.body.appendChild(contextMenu);
+        }
+        
+        function showContextMenu(latLng, pixelOrEvent) {
+            createContextMenu();
+            
+            // Calculăm poziția pe ecran
+            var projection = map.getProjection();
+            var bounds = map.getBounds();
+            var topRight = projection.fromLatLngToPoint(bounds.getNorthEast());
+            var bottomLeft = projection.fromLatLngToPoint(bounds.getSouthWest());
+            var scale = Math.pow(2, map.getZoom());
+            var worldPoint = projection.fromLatLngToPoint(latLng);
+            
+            var pixelX = (worldPoint.x - bottomLeft.x) * scale;
+            var pixelY = (worldPoint.y - topRight.y) * scale;
+            
+            // Găsim poziția container-ului hărții
+            var mapDiv = document.getElementById('map');
+            var mapRect = mapDiv.getBoundingClientRect();
+            
+            contextMenu.innerHTML = `
+                <div style="padding: 10px 16px; cursor: pointer; display: flex; align-items: center;"
+                     onmouseover="this.style.backgroundColor='#f0f0f0'"
+                     onmouseout="this.style.backgroundColor='white'"
+                     onclick="addWaypoint(${latLng.lat()}, ${latLng.lng()})">
+                    <span style="font-size: 18px; margin-right: 10px;">➕</span>
+                    <span style="font-size: 13px; font-weight: 500;">Adaugă la Traseu</span>
+                </div>
+                <div style="height: 1px; background: #e0e0e0; margin: 4px 0;"></div>
+                <div style="padding: 10px 16px; cursor: pointer; display: flex; align-items: center;"
+                     onmouseover="this.style.backgroundColor='#f0f0f0'"
+                     onmouseout="this.style.backgroundColor='white'"
+                     onclick="setAsMyPosition(${latLng.lat()}, ${latLng.lng()})">
+                    <span style="font-size: 18px; margin-right: 10px;">📍</span>
+                    <span style="font-size: 13px; font-weight: 500;">Setează ca poziție curentă</span>
+                </div>
+                <div style="height: 1px; background: #e0e0e0; margin: 4px 0;"></div>
+                <div style="padding: 10px 16px; cursor: pointer; display: flex; align-items: center;"
+                     onmouseover="this.style.backgroundColor='#f0f0f0'"
+                     onmouseout="this.style.backgroundColor='white'"
+                     onclick="setAsExplore(${latLng.lat()}, ${latLng.lng()})">
+                    <span style="font-size: 18px; margin-right: 10px;">🎯</span>
+                    <span style="font-size: 13px; font-weight: 500;">Setează ca zonă de explorare</span>
+                </div>
+            `;
+            
+            contextMenu.style.left = (mapRect.left + pixelX) + 'px';
+            contextMenu.style.top = (mapRect.top + pixelY) + 'px';
+            contextMenu.style.display = 'block';
+            
+            // Verificăm să nu iasă din ecran
+            setTimeout(function() {
+                var menuRect = contextMenu.getBoundingClientRect();
+                if (menuRect.right > window.innerWidth) {
+                    contextMenu.style.left = (window.innerWidth - menuRect.width - 10) + 'px';
+                }
+                if (menuRect.bottom > window.innerHeight) {
+                    contextMenu.style.top = (window.innerHeight - menuRect.height - 10) + 'px';
+                }
+            }, 0);
+        }
+        
+        function hideContextMenu() {
+            if (contextMenu) {
+                contextMenu.style.display = 'none';
+            }
+        }
+        
+        // Închidem meniul când click oriunde
+        document.addEventListener('click', hideContextMenu);
+        
+        function addWaypoint(lat, lng) {
+            hideContextMenu();
+            console.log("Adaug waypoint la: " + lat + ", " + lng);
+            
+            if (pyObj && pyObj.receiveWaypointAdd) {
+                pyObj.receiveWaypointAdd(lat, lng);
+            }
+        }
+        
+        function setAsExplore(lat, lng) {
+            hideContextMenu();
+            console.log("Setez ca explorare: " + lat + ", " + lng);
+            
+            if (pyObj && pyObj.receiveSetExplore) {
+                pyObj.receiveSetExplore(lat, lng);
+            }
+        }
+        
+        function setAsMyPosition(lat, lng) {
+            hideContextMenu();
+            console.log("Setez ca poziție curentă: " + lat + ", " + lng);
+            
+            if (pyObj && pyObj.receiveSetMyPosition) {
+                pyObj.receiveSetMyPosition(lat, lng);
+            }
+        }
+        
+        // --- Funcții pentru Hotspots ---
+        
+        function clearHotspots() {
+            hotspotMarkers.forEach(function(m) { m.setMap(null); });
+            hotspotMarkers = [];
+        }
+        
+        function hideHotspots() {
+            hotspotMarkers.forEach(function(m) { m.setMap(null); });
+            console.log("[HOTSPOT] Hotspots ascunse");
+        }
+        
+        function showHotspots() {
+            hotspotMarkers.forEach(function(m) { m.setMap(map); });
+            console.log("[HOTSPOT] Hotspots afișate");
+        }
+        
+        function addHotspotMarkers(markersData) {
+            console.log("[HOTSPOT] Adaug " + markersData.length + " hotspots");
+            clearHotspots();
+            
+            var bounds = new google.maps.LatLngBounds();
+            
+            markersData.forEach(function(data) {
+                var pos = { lat: data.lat, lng: data.lng };
+                bounds.extend(pos);
+                
+                // Dimensiunea cercului în funcție de numărul de recenzii
+                var scale = Math.min(20, Math.max(8, Math.log10(data.reviews) * 5));
+                
+                // Culoarea în funcție de rating
+                var color = '#ff4444'; // Roșu default
+                if (data.rating >= 4.5) color = '#4CAF50'; // Verde
+                else if (data.rating >= 4.0) color = '#8BC34A'; // Verde deschis
+                else if (data.rating >= 3.5) color = '#FFC107'; // Galben
+                else if (data.rating >= 3.0) color = '#FF9800'; // Portocaliu
+                
+                var marker = new google.maps.Marker({
+                    position: pos,
+                    map: map,
+                    title: data.name + " (" + data.reviews + " recenzii)",
+                    zIndex: 200 + data.reviews,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: scale,
+                        fillColor: color,
+                        fillOpacity: 0.8,
+                        strokeColor: 'white',
+                        strokeWeight: 2
+                    }
+                });
+                
+                var infoContent = '<div style="padding:8px; max-width:250px;">' +
+                    '<strong style="font-size:14px;">' + data.name + '</strong><br>' +
+                    '<span style="color:#f57c00;">⭐ ' + data.rating + '</span> ' +
+                    '<span style="color:#666;">(' + data.reviews + ' recenzii)</span><br>' +
+                    '<small style="color:#888;">' + (data.address || '') + '</small>' +
+                    '</div>';
+                
+                var infoWindow = new google.maps.InfoWindow({
+                    content: infoContent
+                });
+                
+                marker.addListener('click', function() {
+                    infoWindow.open(map, marker);
+                    // Trimitem și la Python
+                    if (pyObj && pyObj.receivePOIClick && data.place_id) {
+                        pyObj.receivePOIClick(data.place_id);
+                    }
+                });
+                
+                hotspotMarkers.push(marker);
+            });
+            
+            // Ajustăm view-ul dacă avem markere
+            if (markersData.length > 0 && markersData.length <= 50) {
+                map.fitBounds(bounds);
+            }
+            
+            console.log("[HOTSPOT] " + hotspotMarkers.length + " hotspots adăugate pe hartă");
+        }
+        
+        // --- Funcții pentru Waypoints vizuale ---
+        
+        function clearWaypoints() {
+            waypointMarkers.forEach(function(m) { m.setMap(null); });
+            waypointMarkers = [];
+        }
+        
+        function addWaypointMarker(lat, lng, label) {
+            var marker = new google.maps.Marker({
+                position: { lat: lat, lng: lng },
+                map: map,
+                title: label,
+                zIndex: 300,
+                icon: {
+                    path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+                    scale: 6,
+                    fillColor: '#9C27B0',
+                    fillOpacity: 1,
+                    strokeColor: 'white',
+                    strokeWeight: 2,
+                    rotation: 0
+                },
+                label: {
+                    text: label,
+                    color: 'white',
+                    fontWeight: 'bold',
+                    fontSize: '10px'
+                }
+            });
+            
+            waypointMarkers.push(marker);
+            return marker;
+        }
+        
+        // Funcție pentru a obține bounds-urile vizibile
+        function getVisibleBounds() {
+            if (!map) return null;
+            var bounds = map.getBounds();
+            if (!bounds) return null;
+            
+            var ne = bounds.getNorthEast();
+            var sw = bounds.getSouthWest();
+            
+            return {
+                north: ne.lat(),
+                east: ne.lng(),
+                south: sw.lat(),
+                west: sw.lng(),
+                center_lat: map.getCenter().lat(),
+                center_lng: map.getCenter().lng(),
+                zoom: map.getZoom()
+            };
+        }
+
+        // --- Funcții apelate din Python ---
+
+        function setCenter(lat, lng, zoom) {
+            if (map) {
+                map.panTo({ lat: lat, lng: lng });
+                if (zoom) map.setZoom(zoom);
+            }
+        }
+        
+        function setMapType(mapType) {
+            if (map) {
+                map.setMapTypeId(mapType);
+                console.log("Tip hartă setat la: " + mapType);
+            }
+        }
+
+        function addMarker(lat, lng, title) {
+            if (!map) return;
+            if (currentMarker) currentMarker.setMap(null);
+
+            currentMarker = new google.maps.Marker({
+                position: { lat: lat, lng: lng },
+                map: map,
+                title: title,
+                animation: google.maps.Animation.DROP
+            });
+
+            var infoWindow = new google.maps.InfoWindow({
+                content: '<div style="padding:5px; font-weight:bold;">' + title + '</div>'
+            });
+            currentMarker.addListener('click', function() {
+                infoWindow.open(map, currentMarker);
+            });
+        }
+
+        function getMarkerColor(index) {
+            var colors = ['#4285f4', '#ea4335', '#fbbc05', '#34a853', '#9c27b0', '#ff5722', '#00bcd4', '#e91e63', '#795548', '#607d8b'];
+            return colors[(index - 1) % colors.length];
+        }
+
+        function addRouteMarkers(markersData) {
+            console.log("[CULOARE] addRouteMarkers primit:", JSON.stringify(markersData));
+            routeMarkers.forEach(function(m) { m.setMap(null); });
+            routeMarkers = [];
+            connectionLines.forEach(function(l) { l.setMap(null); });
+            connectionLines = [];
+
+            var bounds = new google.maps.LatLngBounds();
+
+            markersData.forEach(function(data) {
+                var pos = { lat: data.lat, lng: data.lng };
+                bounds.extend(pos);
+                
+                var markerColor = data.color || getMarkerColor(data.index);
+                console.log("[CULOARE] Marker " + data.index + " (" + data.name + "): color=" + (data.color || "DEFAULT") + " -> using " + markerColor);
+
+                var marker = new google.maps.Marker({
+                    position: pos,
+                    map: map,
+                    title: data.name,
+                    zIndex: 100 + data.index,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 10,
+                        fillColor: markerColor,
+                        fillOpacity: 1,
+                        strokeColor: 'white',
+                        strokeWeight: 2
+                    },
+                    label: {
+                        text: data.index.toString(),
+                        color: "white",
+                        fontWeight: "bold",
+                        fontSize: "12px"
+                    }
+                });
+
+                var infoWindow = new google.maps.InfoWindow({
+                    content: '<div style="padding:5px;"><strong>' + data.index + '. ' + data.name + '</strong></div>'
+                });
+                marker.addListener('click', function() {
+                    infoWindow.open(map, marker);
+                    // Trimitem place_id la Python pentru afișare în rezultate
+                    if (pyObj && pyObj.receiveMarkerClick && data.place_id) {
+                        pyObj.receiveMarkerClick(data.place_id, data.name);
+                    }
+                });
+                routeMarkers.push(marker);
+
+                if (currentPolyline) {
+                    var path = currentPolyline.getPath();
+                    var closestPt = null;
+                    var minDst = Number.MAX_VALUE;
+
+                    for (var i = 0; i < path.getLength(); i++) {
+                        var pt = path.getAt(i);
+                        var dst = google.maps.geometry.spherical.computeDistanceBetween(pt, marker.getPosition());
+                        if (dst < minDst) {
+                            minDst = dst;
+                            closestPt = pt;
+                        }
+                    }
+
+                    if (closestPt && minDst > 30) {
+                        var connLine = new google.maps.Polyline({
+                            path: [closestPt, marker.getPosition()],
+                            geodesic: true,
+                            strokeColor: "#555555",
+                            strokeOpacity: 0,
+                            strokeWeight: 2,
+                            icons: [{
+                                icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 2 },
+                                offset: '0',
+                                repeat: '10px'
+                            }],
+                            map: map,
+                            zIndex: 50
+                        });
+                        connectionLines.push(connLine);
+                    }
+                }
+            });
+        }
+
+        function drawPolyline(encodedPolyline) {
+            if (currentPolyline) currentPolyline.setMap(null);
+            connectionLines.forEach(function(l) { l.setMap(null); });
+            connectionLines = [];
+
+            var path = google.maps.geometry.encoding.decodePath(encodedPolyline);
+	    currentPolyline = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#FF0000', // <--- AICI AM PUS ROSU (RED)
+                strokeOpacity: 0.9,     // Puțin mai opac
+                strokeWeight: 6,        // Puțin mai gros (era 5) ca să se vadă bine
+                map: map,
+                zIndex: 10
+            });
+
+            var bounds = new google.maps.LatLngBounds();
+            path.forEach(function(p) { bounds.extend(p); });
+            map.fitBounds(bounds);
+        }
+        
+        // Funcție pentru curățare completă
+        function clearAll() {
+            if (currentMarker) currentMarker.setMap(null);
+            if (currentPolyline) currentPolyline.setMap(null);
+            routeMarkers.forEach(function(m) { m.setMap(null); });
+            routeMarkers = [];
+            connectionLines.forEach(function(l) { l.setMap(null); });
+            connectionLines = [];
+            clearHotspots();
+            clearWaypoints();
+        }
+    </script>
+
+    <!-- 3. API Loader (Ultimul lucru, cu placeholder) -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=API_KEY_PLACEHOLDER&libraries=geometry&callback=initMap">
+    </script>
+</body>
+</html>

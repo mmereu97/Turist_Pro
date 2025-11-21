@@ -1,0 +1,14 @@
+# Interfața Grafică și Browserul Integrat
+PySide6
+
+# Clientul oficial pentru Google Maps (Places, Directions, Geocoding)
+googlemaps
+
+# Pentru apeluri HTTP (folosit la Gemini API și download hărți)
+requests
+
+# Pentru gestionarea variabilelor de mediu (.env)
+python-dotenv
+
+# Procesare imagini (necesar pentru importul 'from PIL import Image')
+Pillow
