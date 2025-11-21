@@ -1554,21 +1554,6 @@ class MainWindow(QMainWindow):
         
         auto_add_frame.addStretch()
         hotspot_layout.addLayout(auto_add_frame)
-
-        # --- NOU: Diversitate ---
-        diversity_frame = QHBoxLayout()
-        self.diversity_checkbox = QCheckBox("⚖️ Diversitate: Asigură")
-        self.diversity_checkbox.setToolTip("Asigură un minim de X locuri din fiecare categorie majoră (Cultură, Natură, Mâncare, Shopping)")
-        self.diversity_checkbox.setStyleSheet("font-size: 9pt; color: #2e7d32; font-weight: bold;")
-        diversity_frame.addWidget(self.diversity_checkbox)
-        
-        self.diversity_limit_entry = QLineEdit("3")
-        self.diversity_limit_entry.setFixedWidth(30)
-        diversity_frame.addWidget(self.diversity_limit_entry)
-        
-        diversity_frame.addWidget(QLabel("din fiecare categ."))
-        diversity_frame.addStretch()
-        hotspot_layout.addLayout(diversity_frame)
         
         hotspot_layout.addStretch()
         
@@ -4479,94 +4464,48 @@ class MainWindow(QMainWindow):
                     more_label.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
                     self.results_layout.addWidget(more_label)
             
-            # --- LOGICĂ AVANSATĂ: Adăugare Automată + Diversitate ---
-            total_added_count = 0
-            
-            # PASUL 1: Top General (populare)
+            # --- LOGICĂ NOUĂ: Adăugare Automată ---
             if self.auto_add_hotspots_checkbox.isChecked() and all_hotspots:
                 try:
                     max_to_add = int(self.auto_add_limit_entry.text().strip())
                 except:
-                    max_to_add = 15
+                    max_to_add = 15 # Fallback dacă nu e număr
                 
-                added_in_step1 = 0
+                auto_added = 0
+                
+                log_info(f"Se procesează adăugarea automată: max {max_to_add} locuri (notă >= 4.0)...")
+                
+                # Iterăm prin TOATE hotspot-urile găsite până atingem limita
                 for h in all_hotspots:
-                    if added_in_step1 >= max_to_add: break
+                    if auto_added >= max_to_add:
+                        break
+                        
                     pid = h['place_id']
                     rating = h.get('rating', 0)
                     
-                    if pid in selected_places: continue
-                    if rating < 4.0: continue
-
-                    self.toggle_selection(pid, h['name'], rating, h['reviews'], 'Prog. necunoscut', Qt.Checked.value, h.get('types', []))
-                    added_in_step1 += 1
-                
-                total_added_count += added_in_step1
-
-            # PASUL 2: Asigurare Diversitate (Fill Gaps)
-            if self.diversity_checkbox.isChecked() and all_hotspots:
-                try:
-                    min_per_cat = int(self.diversity_limit_entry.text().strip())
-                except:
-                    min_per_cat = 3
-                
-                # Definim categoriile majore
-                categories_map = {
-                    'culture': ['museum', 'art_gallery', 'tourist_attraction', 'church', 'place_of_worship'],
-                    'nature': ['park', 'amusement_park', 'natural_feature'],
-                    'food': ['restaurant', 'cafe', 'bakery', 'bar'],
-                    'shopping': ['shopping_mall', 'department_store', 'clothing_store']
-                }
-                
-                # Helper local pentru detectare categorie
-                def get_cat(types):
-                    for cat_name, keywords in categories_map.items():
-                        if any(k in types for k in keywords):
-                            return cat_name
-                    return 'other'
-
-                # 1. Numărăm ce avem DEJA în listă (inclusiv ce am adăugat la Pasul 1)
-                current_counts = {k: 0 for k in categories_map.keys()}
-                for pid, data in selected_places.items():
-                    # Dacă avem datele complete în selected_places (types)
-                    p_types = data.get('types', [])
-                    # Dacă nu le avem (poate au fost adăugate manual fără types), încercăm să le deducem din hotspot list
-                    if not p_types:
-                        found = next((x for x in all_hotspots if x['place_id'] == pid), None)
-                        if found: p_types = found.get('types', [])
-                    
-                    c = get_cat(p_types)
-                    if c in current_counts:
-                        current_counts[c] += 1
-                
-                log_info(f"Status Diversitate curent: {current_counts}. Ținta: {min_per_cat}/cat")
-                
-                # 2. Completăm lipsurile
-                added_diversity = 0
-                for cat_name in categories_map:
-                    needed = min_per_cat - current_counts[cat_name]
-                    if needed <= 0: continue
-                    
-                    # Căutăm candidați pentru această categorie
-                    candidates = []
-                    for h in all_hotspots:
-                        pid = h['place_id']
-                        rating = h.get('rating', 0)
-                        if pid in selected_places: continue
-                        if rating < 4.0: continue # Respectăm regula de aur
+                    # 1. Verificăm dacă există deja
+                    if pid in selected_places:
+                        continue
                         
-                        if get_cat(h.get('types', [])) == cat_name:
-                            candidates.append(h)
-                    
-                    # Luăm primii N necesari (lista e deja sortată după recenzii)
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'Prog. necunoscut', Qt.Checked.value, h.get('types', []))
-                        added_diversity += 1
-                        total_added_count += 1
-                        log_info(f"➕ Diversitate [{cat_name}]: {h['name']}")
+                    # 2. Filtru Notă minimă 4.0
+                    if rating < 4.0:
+                        continue
 
-            if total_added_count > 0:
-                log_success(f"Total locuri adăugate automat: {total_added_count}")
+                    # Adăugăm
+                    self.toggle_selection(
+                        pid, 
+                        h['name'], 
+                        rating, 
+                        h['reviews'], 
+                        'Program necunoscut', 
+                        Qt.Checked.value,
+                        h.get('types', [])
+                    )
+                    auto_added += 1
+                
+                if auto_added > 0:
+                    msg = f"S-au adăugat automat {auto_added} locuri de top (⭐4.0+) în traseu."
+                    log_success(msg)
             
             self.results_layout.addStretch()
             
