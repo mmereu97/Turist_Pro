@@ -1,58 +1,56 @@
 import os
+import shutil
 import re
 
 TARGET_FILE = "turist_pro.py"
 
-# Versiunea CORECTĂ și COMPLETĂ a funcției scan_hotspots
-NEW_FUNCTION_CODE = r'''    def scan_hotspots(self):
-        """Scanează zona vizibilă pentru POI-uri cu multe recenzii (hotspots)."""
+# Păstrăm blocurile auxiliare la fel, modificăm doar funcția SCAN
+NEW_SCAN_FUNC = r'''    def scan_hotspots(self):
+        """Scanează zona și aplică algoritmul celor 3 Valuri (V3 STRICT)."""
         global route_places_coords, selected_places, diversity_settings, CATEGORIES_MAP
         
-        log_info("=" * 20 + " SCANARE HOTSPOTS (FIXED) " + "=" * 20)
-        
-        # 1. Input Utilizator
+        sender_btn = self.sender()
+        original_text = ""
+        if isinstance(sender_btn, QPushButton):
+            if not sender_btn.isEnabled(): return 
+            original_text = sender_btn.text()
+            sender_btn.setEnabled(False)
+            sender_btn.setText("⏳ Scanez...")
+            QApplication.processEvents()
+
         try:
-            user_min_reviews = int(self.min_reviews_entry.text().strip())
-            if user_min_reviews < 1: user_min_reviews = 100
-        except:
-            user_min_reviews = 100
+            log_info("\n" + "="*40)
+            log_info("🚀 START SCANARE (V3 STRICT: RESPECTĂ LIMITA RECENZII)")
+            log_info("="*40)
             
-        # 2. Coordonate
-        search_coords = None
-        search_mode = self.get_search_type()
-        
-        if search_mode == "my_position":
-            coords_text = self.my_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "explore":
-            coords_text = self.explore_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "saved_location":
-            selected_name = self.location_combo.currentText()
-            if selected_name and selected_name in saved_locations:
-                coords_text = saved_locations[selected_name]
-                search_coords = parse_coordinates(coords_text)
-        
-        if not search_coords:
-            QMessageBox.warning(self, "Eroare", "Nu sunt setate coordonate pentru căutare.")
-            return
+            self.clear_route()
             
-        # 3. Raza
-        try:
-            radius_m = int(float(self.radius_entry.text().strip()) * 1000)
-        except:
-            radius_m = 1500
+            try: min_reviews_top = int(self.min_reviews_entry.text().strip())
+            except: min_reviews_top = 500
             
-        log_info(f"Parametri: Centru={search_coords}, Rază={radius_m}m, Filtru User={user_min_reviews} recenzii")
-        
-        self.clear_results()
-        loading = QLabel("🚀 Scanez satelitul pentru obiective...")
-        loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
-        self.results_layout.addWidget(loading)
-        QApplication.processEvents()
-        
-        try:
-            # Lista extinsă de tipuri
+            search_coords = None
+            mode = self.get_search_type()
+            if mode == "my_position": search_coords = parse_coordinates(self.my_coords_entry.text())
+            elif mode == "explore": search_coords = parse_coordinates(self.explore_coords_entry.text())
+            elif mode == "saved_location":
+                sel = self.location_combo.currentText()
+                if sel in saved_locations: search_coords = parse_coordinates(saved_locations[sel])
+            
+            if not search_coords:
+                QMessageBox.warning(self, "Eroare", "Nu am coordonate de start!")
+                return
+
+            try: radius_m = int(float(self.radius_entry.text().strip()) * 1000)
+            except: radius_m = 1500
+            
+            log_info(f"📍 Centru: {search_coords} | Rază: {radius_m}m | Filtru: {min_reviews_top}+ recenzii")
+
+            self.clear_results()
+            loading = QLabel("📡 Scanez satelitul...")
+            loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
+            self.results_layout.addWidget(loading)
+            QApplication.processEvents()
+            
             poi_types = [
                 'tourist_attraction', 'museum', 'church', 'place_of_worship',
                 'park', 'restaurant', 'cafe', 'bar',
@@ -63,38 +61,36 @@ NEW_FUNCTION_CODE = r'''    def scan_hotspots(self):
             seen_ids = set()
             SAFETY_THRESHOLD = 10 
             
-            # COLECTARE DATE
             for p_type in poi_types:
                 try:
                     res = gmaps_client.places_nearby(location=search_coords, radius=radius_m, type=p_type, language='ro')
-                    places = res.get('results', [])
-                    for p in places:
+                    for p in res.get('results', []):
                         pid = p.get('place_id')
                         if pid in seen_ids: continue
                         revs = p.get('user_ratings_total', 0)
                         if revs < SAFETY_THRESHOLD: continue 
                         seen_ids.add(pid)
                         loc = p.get('geometry', {}).get('location', {})
-                        hotspot = {
+                        rating = p.get('rating', 0)
+                        if rating < 3.8: continue 
+
+                        all_hotspots.append({
                             'place_id': pid,
                             'name': p.get('name', 'N/A'),
                             'lat': loc.get('lat'),
                             'lng': loc.get('lng'),
-                            'rating': p.get('rating', 0),
+                            'rating': rating,
                             'reviews': revs,
                             'address': p.get('vicinity', ''),
                             'types': p.get('types', [])
-                        }
-                        all_hotspots.append(hotspot)
+                        })
                         if pid and loc.get('lat'):
-                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': hotspot['name']}
-                except Exception as e:
-                    log_debug(f"Err scan type {p_type}: {e}")
+                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': p.get('name')}
+                except: pass
 
             all_hotspots.sort(key=lambda x: x['reviews'], reverse=True)
-            log_success(f"Găsite {len(all_hotspots)} locuri totale (>10 recenzii).")
+            log_success(f"✅ Radar: {len(all_hotspots)} locuri valide.")
 
-            # Helper functions
             def get_cat(types):
                 for k, v in CATEGORIES_MAP.items():
                     if any(t in types for t in v['keywords']): return k
@@ -116,111 +112,151 @@ NEW_FUNCTION_CODE = r'''    def scan_hotspots(self):
                     else: cnts['other'] += 1
                 return cnts
 
-            total_added = 0
+            total_v1 = 0
+            total_v2 = 0
+            total_v3 = 0
 
-            # PAS 1: TOP GENERAL (Strict)
+            # >>> PASUL 1: TOP GENERAL <<<
             if self.auto_add_hotspots_checkbox.isChecked():
-                try:
-                    limit_top = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    limit_top = 15
+                try: limit_v1 = int(self.auto_add_limit_entry.text().strip())
+                except: limit_v1 = 15
                 
-                step1_count = 0
+                log_info(f"\n🌊 [V1] Start Val 1: Top {limit_v1}")
+                count = 0
                 for h in all_hotspots:
-                    if step1_count >= limit_top: break
-                    
-                    if h['reviews'] < user_min_reviews: continue
-                    if h['rating'] < 4.0: continue
+                    if count >= limit_v1: break
+                    if h['reviews'] < min_reviews_top: continue
                     if h['place_id'] in selected_places: continue
                     if is_excluded(h['types']): continue
                     
                     cat = get_cat(h['types'])
                     inv = get_inventory()
-                    if cat in diversity_settings:
-                        max_allowed = diversity_settings[cat].get('max', 99)
-                        if inv.get(cat, 0) >= max_allowed: continue
+                    if cat in diversity_settings and inv.get(cat, 0) >= diversity_settings[cat].get('max', 99):
+                        continue
 
-                    self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                    step1_count += 1
-                    log_success(f"✅ [TOP] {h['name']} ({h['reviews']})")
-                
-                total_added += step1_count
+                    display_name = f"[V1] {h['name']}"
+                    self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
+                    count += 1
+                    log_success(f"   + Adăugat: {h['name']}")
+                total_v1 = count
 
-            # PAS 2: DIVERSITATE (Relaxat)
+            # >>> PASUL 2: DIVERSITATE <<<
             if self.diversity_checkbox.isChecked():
-                for cat_key, rules in diversity_settings.items():
-                    target_min = rules.get('min', 0)
-                    if target_min <= 0: continue
-                    
-                    inv = get_inventory()
-                    curr = inv.get(cat_key, 0)
-                    needed = target_min - curr
+                log_info("\n🌊 [V2] Start Val 2: Diversitate")
+                for cat, rules in diversity_settings.items():
+                    target = rules.get('min', 0)
+                    if target <= 0: continue
+                    curr = get_inventory().get(cat, 0)
+                    needed = target - curr
                     if needed <= 0: continue
                     
-                    min_rating = rules.get('min_rating', 0)
-                    candidates = []
-                    for h in all_hotspots:
-                        if h['place_id'] in selected_places: continue
-                        if h['rating'] < min_rating: continue
-                        if is_excluded(h['types']): continue
-                        if get_cat(h['types']) == cat_key: candidates.append(h)
+                    # Diversitatea IGNORĂ limita de 500 (vrea calitate specifică)
+                    cands = [h for h in all_hotspots if 
+                             h['place_id'] not in selected_places and 
+                             h['rating'] >= rules.get('min_rating', 0) and 
+                             not is_excluded(h['types']) and 
+                             get_cat(h['types']) == cat]
+                    cands.sort(key=lambda x: x['reviews'], reverse=True)
                     
-                    candidates.sort(key=lambda x: x['reviews'], reverse=True)
-                    
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                        total_added += 1
-                        log_success(f"⚖️ [DIVERSITATE] {h['name']} ({h['reviews']})")
+                    for h in cands[:needed]:
+                        display_name = f"[V2] {h['name']}"
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
+                        total_v2 += 1
+                        log_success(f"   + Adăugat: {h['name']}")
 
+            # >>> PASUL 3: GEOGRAFIC (STRICT) <<<
+            if self.geo_coverage_checkbox.isChecked():
+                try: limit_v3 = int(self.geo_limit_entry.text().strip())
+                except: limit_v3 = 3
+                
+                try: min_dist_m = int(self.geo_dist_entry.text().strip())
+                except: min_dist_m = 500 
+                
+                log_info(f"\n🌊 [V3] Start Val 3: Geografic (Max {limit_v3}, Dist > {min_dist_m}m, STRICT {min_reviews_top}+ Recenzii)")
+                
+                added_v3 = 0
+                
+                for h in all_hotspots:
+                    if added_v3 >= limit_v3: break
+                    
+                    # --- FILTRU STRICT PENTRU V3 ---
+                    if h['reviews'] < min_reviews_top: continue # Numai locuri "Verzi"
+                    
+                    if h['place_id'] in selected_places: continue
+                    if h['rating'] < 4.0: continue 
+                    if is_excluded(h['types']): continue
+                    
+                    my_lat = h['lat']
+                    my_lng = h['lng']
+                    is_isolated = True
+                    
+                    for pid, pdata in selected_places.items():
+                        p_coords = route_places_coords.get(pid)
+                        if not p_coords:
+                             f = next((x for x in all_hotspots if x['place_id'] == pid), None)
+                             if f: p_coords = {'lat': f['lat'], 'lng': f['lng']}
+                        
+                        if p_coords:
+                            d = haversine_distance(my_lat, my_lng, p_coords['lat'], p_coords['lng'])
+                            if d < min_dist_m:
+                                is_isolated = False
+                                break
+                    
+                    if is_isolated:
+                        display_name = f"[V3] {h['name']}"
+                        special_types = h['types'] + ['poi_geographic']
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], 'N/A', Qt.Checked.value, special_types)
+                        added_v3 += 1
+                        total_v3 += 1
+                        log_success(f"   + Adăugat [V3]: {h['name']} (Zonă nouă!)")
+
+            # --- FINAL ---
             self.clear_results()
             
-            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= user_min_reviews]
+            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= min_reviews_top]
             if visual_hotspots:
                 js_code = f"addHotspotMarkers({json.dumps(visual_hotspots)});"
                 self.web_view.page().runJavaScript(js_code)
                 self.show_hotspots_checkbox.setChecked(True)
             
-            header = QLabel(f"🔥 Rezultate Scanare")
+            header = QLabel("🔥 Rezultate Scanare")
             header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #e65100;")
             self.results_layout.addWidget(header)
             
-            msg = f"Scanat: {len(all_hotspots)} locuri.\\nAdăugat: {total_added} locuri."
+            msg = f"Total: {total_v1 + total_v2 + total_v3}\n[V1] Top: {total_v1}\n[V2] Div: {total_v2}\n[V3] Geo: {total_v3}"
             summary = QLabel(msg)
-            summary.setStyleSheet("font-size: 11pt; padding: 10px;")
+            summary.setStyleSheet("font-size: 11pt; padding: 10px; font-family: monospace;")
             self.results_layout.addWidget(summary)
             self.results_layout.addStretch()
             
         except Exception as e:
-            log_error(f"Eroare la scanarea hotspots: {e}")
+            log_error(f"Err: {e}")
             traceback.print_exc()
-            self.clear_results()
-            error_label = QLabel(f"❌ Eroare: {e}")
-            self.results_layout.addWidget(error_label)'''
+        finally:
+            if isinstance(sender_btn, QPushButton):
+                sender_btn.setEnabled(True)
+                sender_btn.setText(original_text if original_text else "🔥 Scanează")'''
 
-def fix_file():
+def apply_scan_update():
     if not os.path.exists(TARGET_FILE):
-        print("❌ Nu găsesc fisierul!")
+        print("❌ Lipsă fișier.")
         return
 
     with open(TARGET_FILE, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Regex pattern pentru a găsi întreaga funcție scan_hotspots
-    # Caută "def scan_hotspots(self):" și tot textul până la "def create_hotspot_card"
-    pattern = r"def scan_hotspots\(self\):.*?(?=def create_hotspot_card)"
-    
-    # Verificăm dacă găsim funcția veche (chiar și stricată)
-    match = re.search(pattern, content, re.DOTALL)
-    
-    if match:
-        print("✅ Am găsit funcția scan_hotspots veche (inclusiv erori). O înlocuiesc complet.")
-        new_content = content[:match.start()] + NEW_FUNCTION_CODE + "\n    " + content[match.end():]
-        
-        with open(TARGET_FILE, 'w', encoding='utf-8') as f:
-            f.write(new_content)
-        print("✨ Fișierul a fost reparat cu succes!")
+    # Înlocuim funcția scan_hotspots
+    scan_pattern = r"def scan_hotspots\(self\):.*?(?=def create_hotspot_card)"
+    match_scan = re.search(scan_pattern, content, re.DOTALL)
+    if match_scan:
+        content = content[:match_scan.start()] + NEW_SCAN_FUNC + "\n    " + content[match_scan.end():]
+        print("✅ Scan Logic updated (V3 Strict Mode).")
     else:
-        print("❌ Nu am putut identifica funcția scan_hotspots. Verifică manual.")
+        print("❌ Nu am găsit funcția scan_hotspots.")
+
+    with open(TARGET_FILE, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print("✨ Gata!")
 
 if __name__ == "__main__":
-    fix_file()
+    apply_scan_update()

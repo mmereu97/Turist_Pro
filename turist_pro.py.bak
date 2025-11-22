@@ -477,6 +477,13 @@ class MapBridge(QObject):
     setExploreSignal = Signal(float, float)
     # NOU: Semnal pentru setare poziție curentă
     setMyPositionSignal = Signal(float, float)
+    # NOU: Semnal sincronizare zoom
+    zoomChangedSignal = Signal(int)
+
+    @Slot(int)
+    def updateZoomLevel(self, zoom):
+        """Primește nivelul de zoom din JS și îl trimite în Python."""
+        self.zoomChangedSignal.emit(zoom)
 
     @Slot(float, float)
     def receiveMapClick(self, lat, lng):
@@ -2069,6 +2076,8 @@ class MainWindow(QMainWindow):
         self.map_bridge.waypointAddSignal.connect(self.on_waypoint_add)
         self.map_bridge.setExploreSignal.connect(self.on_set_explore_from_map)
         self.map_bridge.setMyPositionSignal.connect(self.on_set_my_position_from_map)
+        # Conectare sincronizare zoom
+        self.map_bridge.zoomChangedSignal.connect(self.on_map_zoom_changed)
         self.channel.registerObject("pyObj", self.map_bridge)
         self.web_page.setWebChannel(self.channel) # Punem canalul pe Pagină, nu pe View
         
@@ -4114,6 +4123,20 @@ class MainWindow(QMainWindow):
             return
             
         self.map_is_loaded = True
+        
+        # --- INJECTARE JS PENTRU SINCRONIZARE ZOOM ---
+        # Asta face ca atunci când dai zoom din mouse, Python să afle imediat
+        js_zoom_listener = """
+        if (typeof map !== 'undefined') {
+            map.addListener('zoom_changed', function() {
+                if (window.pyObj) {
+                    window.pyObj.updateZoomLevel(map.getZoom());
+                }
+            });
+        }
+        """
+        self.web_view.page().runJavaScript(js_zoom_listener)
+        
         log_success("Browserul a terminat de încărcat harta. Aplicăm starea inițială.")
         
         # Dacă avem coordonate salvate, acum e momentul să mutăm harta
@@ -5121,6 +5144,12 @@ class MainWindow(QMainWindow):
             self.web_view.page().runJavaScript(js_code)
             log_info("Hotspots ascunse de pe hartă.")
         
+    def on_map_zoom_changed(self, zoom):
+        """Actualizează variabila globală când utilizatorul dă zoom pe hartă."""
+        global current_zoom_level
+        current_zoom_level = zoom
+        # log_debug(f"Zoom sincronizat: {zoom}")
+
     def closeEvent(self, event):
         self.save_state()
         event.accept()

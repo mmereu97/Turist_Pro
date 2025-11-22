@@ -8,6 +8,23 @@ import json
 import webbrowser
 import math
 
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculează distanța în metri între două coordonate GPS."""
+    try:
+        R = 6371000  # Raza Pământului în metri
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        
+        a = math.sin(dphi / 2)**2 + \
+            math.cos(phi1) * math.cos(phi2) * \
+            math.sin(dlambda / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+    except:
+        return 0.0
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QRadioButton, QCheckBox, QTextEdit,
@@ -52,6 +69,9 @@ def log_success(message):
 
 def log_error(message):
     print(f"{Colors.FAIL}{Colors.BOLD}[ERROR] {message}{Colors.ENDC}")
+
+def log_warning(message):
+    print(f"{Colors.WARNING}[WARNING] {message}{Colors.ENDC}")
 
 def log_info(message):
     print(f"{Colors.HEADER}[INFO] {message}{Colors.ENDC}")
@@ -1100,16 +1120,21 @@ class SettingsDialog(QDialog):
 
 
 # --- Helper Categorii (Dinamic) ---
+# --- Helper Categorii (Dinamic) ---
+# --- Helper Categorii (Dinamic) ---
 def get_category_label(types_list):
     if not types_list: return "📍 Locație"
     
+    # ETICHETĂ SPECIALĂ PENTRU POI GEOGRAFIC
+    if 'poi_geographic' in types_list:
+        return "🌐 Zonă Activă (Auto-Fill)"
+
     # 1. Căutăm în harta noastră extinsă
     for cat_key, data in CATEGORIES_MAP.items():
         if any(t in types_list for t in data['keywords']):
-            # Întoarcem eticheta categoriei principale (ex: "☕ Cafenele/Patiserii")
             return data['label']
             
-    # 2. Fallback-uri specifice pentru ce nu e în harta diversitate
+    # 2. Fallback-uri
     simple_map = {
         'lodging': '🏨 Hotel/Cazare',
         'parking': '🅿️ Parcare',
@@ -1121,7 +1146,6 @@ def get_category_label(types_list):
     for t in types_list:
         if t in simple_map: return simple_map[t]
 
-    # 3. Fallback generic
     return "📍 " + types_list[0].replace('_', ' ').capitalize()
 
 class RouteItemWidget(QFrame):
@@ -1728,78 +1752,79 @@ class MainWindow(QMainWindow):
         hotspot_widget = QWidget()
         hotspot_layout = QVBoxLayout(hotspot_widget)
         hotspot_layout.setContentsMargins(10, 0, 0, 0)
-        
-        hotspot_layout.addWidget(QLabel("🔥 Zone Fierbinți:"))
-        
-        # Limita minimă de recenzii
+        hotspot_layout.addWidget(QLabel("🔥 Zone Fierbinți (3 Valuri):"))
+
+        # Limita minimă
         min_reviews_layout = QHBoxLayout()
         min_reviews_layout.addWidget(QLabel("Min recenzii:"))
         self.min_reviews_entry = QLineEdit()
         self.min_reviews_entry.setFixedWidth(60)
         self.min_reviews_entry.setText("500")
-        self.min_reviews_entry.setToolTip("Numărul minim de recenzii pentru a fi considerat hotspot")
         min_reviews_layout.addWidget(self.min_reviews_entry)
         hotspot_layout.addLayout(min_reviews_layout)
-        
-        # Buton scanare hotspots
+
+        # Buton
         scan_hotspots_btn = QPushButton("🔥 Scanează")
-        scan_hotspots_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ff5722;
-                color: white;
-                padding: 6px 12px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 10pt;
-            }
-            QPushButton:hover {
-                background-color: #e64a19;
-            }
-        """)
-        scan_hotspots_btn.setToolTip("Scanează zona pentru locuri cu multe recenzii")
+        scan_hotspots_btn.setStyleSheet("background-color: #ff5722; color: white; font-weight: bold;")
         scan_hotspots_btn.clicked.connect(self.scan_hotspots)
         hotspot_layout.addWidget(scan_hotspots_btn)
-        
-        # Checkbox pentru afișare/ascundere hotspots
+
+        # Checkbox afisare
         self.show_hotspots_checkbox = QCheckBox("Afișează pe hartă")
         self.show_hotspots_checkbox.setChecked(True)
-        self.show_hotspots_checkbox.setStyleSheet("font-size: 9pt;")
         self.show_hotspots_checkbox.stateChanged.connect(self.toggle_hotspots_visibility)
         hotspot_layout.addWidget(self.show_hotspots_checkbox)
-        
-        # --- NOU: Adăugare automată cu limită editabilă ---
-        auto_add_frame = QHBoxLayout()
-        
-        self.auto_add_hotspots_checkbox = QCheckBox("➕ Adaugă automat (>=4.0)")
-        self.auto_add_hotspots_checkbox.setToolTip("Adaugă automat locurile populare cu nota minimă 4.0")
-        self.auto_add_hotspots_checkbox.setStyleSheet("font-size: 9pt; color: #e65100; font-weight: bold;")
-        auto_add_frame.addWidget(self.auto_add_hotspots_checkbox)
-        
-        auto_add_frame.addWidget(QLabel("Limită:"))
-        self.auto_add_limit_entry = QLineEdit("15")
-        self.auto_add_limit_entry.setFixedWidth(40)
-        self.auto_add_limit_entry.setToolTip("Numărul maxim de locuri de adăugat")
-        auto_add_frame.addWidget(self.auto_add_limit_entry)
-        
-        auto_add_frame.addStretch()
-        hotspot_layout.addLayout(auto_add_frame)
 
-        # --- NOU: Diversitate ---
-        diversity_frame = QHBoxLayout()
-        self.diversity_checkbox = QCheckBox("⚖️ Aplică Reguli Diversitate")
-        self.diversity_checkbox.setToolTip("Completează traseul conform regulilor definite în Setări > Diversitate")
-        self.diversity_checkbox.setStyleSheet("font-size: 9pt; color: #2e7d32; font-weight: bold;")
-        diversity_frame.addWidget(self.diversity_checkbox)
+        # --- CONFIGURARE SCANARE AUTOMATĂ ---
         
-        # Buton scurtătură către setări
-        div_settings_btn = QPushButton("⚙️ Config")
-        div_settings_btn.setFixedWidth(60)
-        div_settings_btn.setStyleSheet("font-size: 8pt; padding: 2px;")
-        div_settings_btn.clicked.connect(lambda: self.open_settings()) # Deschide dialogul setări
-        diversity_frame.addWidget(div_settings_btn)
-        diversity_frame.addStretch()
-        hotspot_layout.addLayout(diversity_frame)
+        # 1. V1: TOP GENERAL
+        v1_frame = QHBoxLayout()
+        self.auto_add_hotspots_checkbox = QCheckBox("✅ [V1] Adaugă Top")
+        self.auto_add_hotspots_checkbox.setToolTip("Valul 1: Adaugă cele mai populare locuri (Scheletul traseului)")
+        self.auto_add_hotspots_checkbox.setStyleSheet("font-weight: bold; color: #1565c0;")
+        v1_frame.addWidget(self.auto_add_hotspots_checkbox)
+        
+        self.auto_add_limit_entry = QLineEdit("15")
+        self.auto_add_limit_entry.setFixedWidth(35)
+        self.auto_add_limit_entry.setToolTip("Limita pentru V1")
+        v1_frame.addWidget(self.auto_add_limit_entry)
+        v1_frame.addStretch()
+        hotspot_layout.addLayout(v1_frame)
+
+        # 2. V2: DIVERSITATE
+        v2_frame = QHBoxLayout()
+        self.diversity_checkbox = QCheckBox("⚖️ [V2] Diversitate")
+        self.diversity_checkbox.setToolTip("Valul 2: Completează categoriile lipsă (Biserici, Parcuri etc.)")
+        self.diversity_checkbox.setStyleSheet("font-weight: bold; color: #2e7d32;")
+        v2_frame.addWidget(self.diversity_checkbox)
+        
+        div_settings_btn = QPushButton("⚙️")
+        div_settings_btn.setFixedWidth(30)
+        div_settings_btn.clicked.connect(lambda: self.open_settings())
+        v2_frame.addWidget(div_settings_btn)
+        v2_frame.addStretch()
+        hotspot_layout.addLayout(v2_frame)
+        
+        # 3. V3: POI GEOGRAFIC (Cu Distanță Editabilă)
+        v3_frame = QHBoxLayout()
+        self.geo_coverage_checkbox = QCheckBox("🗺️ [V3] POI Geo")
+        self.geo_coverage_checkbox.setToolTip("Valul 3: Umple golurile de pe hartă")
+        self.geo_coverage_checkbox.setStyleSheet("font-weight: bold; color: #e65100;")
+        v3_frame.addWidget(self.geo_coverage_checkbox)
+        
+        v3_frame.addWidget(QLabel("Lim:"))
+        self.geo_limit_entry = QLineEdit("3")
+        self.geo_limit_entry.setFixedWidth(30)
+        v3_frame.addWidget(self.geo_limit_entry)
+        
+        v3_frame.addWidget(QLabel("Dist(m):"))
+        self.geo_dist_entry = QLineEdit("500")
+        self.geo_dist_entry.setFixedWidth(35)
+        self.geo_dist_entry.setToolTip("Distanța minimă față de traseu pentru a considera zona 'goală'")
+        v3_frame.addWidget(self.geo_dist_entry)
+        
+        v3_frame.addStretch()
+        hotspot_layout.addLayout(v3_frame)
         
         hotspot_layout.addStretch()
         
@@ -3037,11 +3062,9 @@ class MainWindow(QMainWindow):
         log_info("Traseul a fost golit.")
     
     def refresh_route_info(self, silent_mode=False):
-        """Actualizează informațiile (rating, recenzii, status) pentru toate locațiile din traseu."""
+        """Actualizează informațiile, PĂSTRÂND etichetele [V1]/[V2] dacă există."""
         global selected_places
         
-        # Dacă funcția e apelată de buton (Qt signal), silent_mode poate fi bool-ul 'checked' (False).
-        # Ne asigurăm că e True doar dacă specificăm noi explicit.
         is_silent = silent_mode is True
         
         if self.route_list.count() == 0:
@@ -3049,137 +3072,104 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Info", "Nu există locații în traseu.")
             return
         
-        # Confirmăm actualizarea DOAR dacă nu suntem în mod silențios
         if not is_silent:
             reply = QMessageBox.question(
-                self, 
-                "Actualizare Info", 
-                f"Vrei să actualizezi informațiile pentru toate cele {self.route_list.count()} locații din traseu?\n\n"
-                "Acest lucru poate dura câteva secunde.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                self, "Actualizare Info", 
+                f"Actualizez {self.route_list.count()} locații?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
             )
-            
-            if reply != QMessageBox.Yes:
-                return
+            if reply != QMessageBox.Yes: return
         
         try:
-            log_info("Se actualizează informațiile pentru traseu...")
+            log_info("Se actualizează informațiile (păstrând prefixele)...")
             
-            # Colectăm toate place_id-urile și culorile
             route_order = []
             saved_colors = {}
             saved_locks = {}
             
+            # Salvăm starea curentă
             for i in range(self.route_list.count()):
                 item = self.route_list.item(i)
-                place_id = item.data(Qt.UserRole)
-                route_order.append(place_id)
-                
+                pid = item.data(Qt.UserRole)
+                route_order.append(pid)
                 widget = self.route_list.itemWidget(item)
                 if widget:
-                    if hasattr(widget, 'initial_color'):
-                        saved_colors[place_id] = widget.initial_color
-                    saved_locks[place_id] = widget.is_locked()
+                    if hasattr(widget, 'initial_color'): saved_colors[pid] = widget.initial_color
+                    saved_locks[pid] = widget.is_locked()
             
-            # Actualizăm informațiile pentru fiecare locație
             updated_count = 0
             for place_id in route_order:
                 try:
-                    # Obținem detaliile de la Google Places API
-                    # Eliminăm filtrul 'fields' pentru a evita erorile de validare ale librăriei ('types' vs 'type')
-                    # Astfel primim tot obiectul, inclusiv categoriile și recenziile.
-                    details = gmaps_client.place(
-                        place_id=place_id, 
-                        language='ro'
-                    )
-                    
+                    details = gmaps_client.place(place_id=place_id, language='ro')
                     result = details.get('result', {})
-                    name = result.get('name', selected_places.get(place_id, {}).get('name', 'Unknown'))
+                    
+                    # --- LOGICA DE PĂSTRARE PREFIX ---
+                    old_data = selected_places.get(place_id, {})
+                    old_name = old_data.get('name', 'Unknown') if isinstance(old_data, dict) else str(old_data)
+                    
+                    new_google_name = result.get('name', old_name)
+                    
+                    # Detectăm prefixul [V1], [V2], [V3]
+                    prefix = ""
+                    if old_name.startswith("[V"):
+                        # Luăm primele 5 caractere (ex: "[V1] ")
+                        prefix = old_name[:5]
+                    
+                    # Reconstruim numele final
+                    final_name = f"{prefix}{new_google_name}" if prefix and not new_google_name.startswith("[V") else new_google_name
+                    
                     rating = result.get('rating', 'N/A')
                     reviews_count = result.get('user_ratings_total', 0)
                     
-                    opening_hours = result.get('opening_hours', {})
-                    if 'open_now' in opening_hours:
-                        is_open_status = "Deschis acum" if opening_hours.get('open_now') else "Închis acum"
-                    else:
-                        is_open_status = "Program necunoscut"
+                    oh = result.get('opening_hours', {})
+                    is_open = "Deschis acum" if oh.get('open_now') else "Închis acum" if 'open_now' in oh else "Prog. necunoscut"
                     
-                    # Actualizăm dicționarul selected_places
+                    # Update dict
                     if place_id in selected_places:
                         if isinstance(selected_places[place_id], dict):
-                            selected_places[place_id]['name'] = name
+                            selected_places[place_id]['name'] = final_name # Numele cu prefix
                             selected_places[place_id]['rating'] = rating
                             selected_places[place_id]['reviews_count'] = reviews_count
-                            selected_places[place_id]['is_open_status'] = is_open_status
+                            selected_places[place_id]['is_open_status'] = is_open
                             selected_places[place_id]['types'] = result.get('types', [])
-                        else:
-                            # Convertim datele vechi în format nou
-                            selected_places[place_id] = {
-                                'name': name,
-                                'rating': rating,
-                                'reviews_count': reviews_count,
-                                'is_open_status': is_open_status,
-                                'types': result.get('types', [])
-                            }
                     
                     updated_count += 1
-                    log_debug(f"Actualizat: {name} - ⭐{rating} 📝{reviews_count} 🕒{is_open_status}")
                     
                 except Exception as e:
-                    log_error(f"Eroare la actualizarea {place_id}: {e}")
+                    log_error(f"Err update {place_id}: {e}")
                     continue
             
-            # Reconstruim lista vizuală cu datele actualizate
+            # Reconstruim lista
             self.route_list.clear()
-            
             for place_id in route_order:
                 if place_id in selected_places:
-                    data = selected_places[place_id]
+                    d = selected_places[place_id]
+                    nm = d.get('name', '?')
+                    rt = d.get('rating', 'N/A')
+                    rv = d.get('reviews_count', 0)
+                    st = d.get('is_open_status', '?')
+                    tp = d.get('types', [])
                     
-                    if isinstance(data, dict):
-                        name = data.get('name', 'Unknown')
-                        rating = data.get('rating', 'N/A')
-                        reviews_count = data.get('reviews_count', 0)
-                        is_open_status = data.get('is_open_status', 'Program necunoscut')
-                        place_types = data.get('types', [])
-                    else:
-                        name = str(data)
-                        rating = 'N/A'
-                        reviews_count = 0
-                        is_open_status = 'Program necunoscut'
-                        place_types = []
-                    
-                    original_color = saved_colors.get(place_id)
-                    self.add_to_route_list(place_id, name, "", original_color, rating, reviews_count, is_open_status, place_types)
+                    col = saved_colors.get(place_id)
+                    self.add_to_route_list(place_id, nm, "", col, rt, rv, st, tp)
             
-            # Restaurăm stările de blocare
+            # Restaurăm lock
             for i in range(self.route_list.count()):
                 item = self.route_list.item(i)
-                place_id = item.data(Qt.UserRole)
-                widget = self.route_list.itemWidget(item)
-                
-                if widget and place_id in saved_locks:
-                    if saved_locks[place_id]:
-                        widget.set_locked(True)
+                pid = item.data(Qt.UserRole)
+                w = self.route_list.itemWidget(item)
+                if w and pid in saved_locks and saved_locks[pid]:
+                    w.set_locked(True)
             
             self.renumber_route_items()
             self.update_lock_states()
             self.save_route_order()
+            self.apply_route_filter()
             
-            log_success(f"Informații actualizate pentru {updated_count} locații!")
-            if not is_silent:
-                QMessageBox.information(
-                    self, 
-                    "✅ Actualizare Completă", 
-                    f"Informațiile au fost actualizate pentru {updated_count} din {len(route_order)} locații!"
-                )
+            log_success(f"Info actualizat pentru {updated_count} locații. Prefixele păstrate.")
             
         except Exception as e:
-            log_error(f"Eroare la actualizarea traseului: {e}")
-            traceback.print_exc()
-            QMessageBox.critical(self, "Eroare", f"Eroare la actualizare: {e}")
-    
+            log_error(f"Err refresh: {e}")
     def save_route_to_file(self):
         """Salvează traseul curent într-un fișier JSON."""
         global selected_places, route_places_coords
@@ -3995,8 +3985,15 @@ class MainWindow(QMainWindow):
             },
             "diversity_settings": diversity_settings,
             "saved_locations": saved_locations,
-            "saved_route": saved_route_data, # --- NOU: Salvăm lista complexă ---
-            "route_filter_index": self.route_filter_combo.currentIndex()
+            "saved_route": saved_route_data, 
+            "route_filter_index": self.route_filter_combo.currentIndex(),
+            # --- BIFE SCANARE ---
+            "auto_add_enabled": self.auto_add_hotspots_checkbox.isChecked(),
+            "auto_add_limit": self.auto_add_limit_entry.text(),
+            "diversity_enabled": self.diversity_checkbox.isChecked(),
+            "geo_enabled": self.geo_coverage_checkbox.isChecked(),
+            "geo_limit": self.geo_limit_entry.text(),
+            "geo_dist": self.geo_dist_entry.text()
         }
         
         try:
@@ -4109,6 +4106,14 @@ class MainWindow(QMainWindow):
             filter_idx = state.get("route_filter_index", 0)
             self.route_filter_combo.setCurrentIndex(filter_idx)
             self.apply_route_filter()
+            
+            # Restaurăm bifele de scanare
+            if "auto_add_enabled" in state:
+                self.auto_add_hotspots_checkbox.setChecked(state["auto_add_enabled"])
+            if "auto_add_limit" in state:
+                self.auto_add_limit_entry.setText(str(state["auto_add_limit"]))
+            if "diversity_enabled" in state:
+                self.diversity_checkbox.setChecked(state["diversity_enabled"])
             
             log_success("Starea a fost încărcată complet.")
             
@@ -4580,67 +4585,51 @@ class MainWindow(QMainWindow):
 
 
     def scan_hotspots(self):
-        """Scanează zona vizibilă pentru POI-uri cu multe recenzii (hotspots)."""
+        """Scanează zona și aplică algoritmul celor 3 Valuri (V3 STRICT)."""
         global route_places_coords, selected_places, diversity_settings, CATEGORIES_MAP
         
-        log_info("=" * 20 + " SCANARE HOTSPOTS (ULTRA DEBUG) " + "=" * 20)
-        
-        # --- 0. DIAGNOSTIC START ---
-        log_debug(f"STATUS BIFE UI:")
-        log_debug(f"  > Auto Add Top: {self.auto_add_hotspots_checkbox.isChecked()}")
-        log_debug(f"  > Diversitate: {self.diversity_checkbox.isChecked()}")
-        
-        log_debug(f"SETĂRI DIVERSITATE DIN MEMORIE:")
-        if not diversity_settings:
-            log_error("!!! diversity_settings ESTE GOL! !!!")
-        else:
-            for k, v in diversity_settings.items():
-                log_debug(f"  - Categ '{k}': Min={v.get('min')} | Max={v.get('max')} | Rating={v.get('min_rating')}")
-        # --- 0. DIAGNOSTIC END ---
+        sender_btn = self.sender()
+        original_text = ""
+        if isinstance(sender_btn, QPushButton):
+            if not sender_btn.isEnabled(): return 
+            original_text = sender_btn.text()
+            sender_btn.setEnabled(False)
+            sender_btn.setText("⏳ Scanez...")
+            QApplication.processEvents()
 
-        # 1. Input Utilizator (Recenzii minime pentru TOP)
         try:
-            user_min_reviews = int(self.min_reviews_entry.text().strip())
-            if user_min_reviews < 1: user_min_reviews = 100
-        except:
-            user_min_reviews = 100
+            log_info("\n" + "="*40)
+            log_info("🚀 START SCANARE (V3 STRICT: RESPECTĂ LIMITA RECENZII)")
+            log_info("="*40)
             
-        # 2. Coordonate
-        search_coords = None
-        search_mode = self.get_search_type()
-        
-        if search_mode == "my_position":
-            coords_text = self.my_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "explore":
-            coords_text = self.explore_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "saved_location":
-            selected_name = self.location_combo.currentText()
-            if selected_name and selected_name in saved_locations:
-                coords_text = saved_locations[selected_name]
-                search_coords = parse_coordinates(coords_text)
-        
-        if not search_coords:
-            QMessageBox.warning(self, "Eroare", "Nu sunt setate coordonate pentru căutare.")
-            return
+            self.clear_route()
             
-        # 3. Raza
-        try:
-            radius_m = int(float(self.radius_entry.text().strip()) * 1000)
-        except:
-            radius_m = 1500
+            try: min_reviews_top = int(self.min_reviews_entry.text().strip())
+            except: min_reviews_top = 500
             
-        log_info(f"Parametri: Centru={search_coords}, Rază={radius_m}m, Filtru User (doar pt Top)={user_min_reviews}")
-        
-        self.clear_results()
-        loading = QLabel("🚀 Scanez satelitul pentru obiective...")
-        loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
-        self.results_layout.addWidget(loading)
-        QApplication.processEvents()
-        
-        try:
-            # Lista extinsă de tipuri
+            search_coords = None
+            mode = self.get_search_type()
+            if mode == "my_position": search_coords = parse_coordinates(self.my_coords_entry.text())
+            elif mode == "explore": search_coords = parse_coordinates(self.explore_coords_entry.text())
+            elif mode == "saved_location":
+                sel = self.location_combo.currentText()
+                if sel in saved_locations: search_coords = parse_coordinates(saved_locations[sel])
+            
+            if not search_coords:
+                QMessageBox.warning(self, "Eroare", "Nu am coordonate de start!")
+                return
+
+            try: radius_m = int(float(self.radius_entry.text().strip()) * 1000)
+            except: radius_m = 1500
+            
+            log_info(f"📍 Centru: {search_coords} | Rază: {radius_m}m | Filtru: {min_reviews_top}+ recenzii")
+
+            self.clear_results()
+            loading = QLabel("📡 Scanez satelitul...")
+            loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
+            self.results_layout.addWidget(loading)
+            QApplication.processEvents()
+            
             poi_types = [
                 'tourist_attraction', 'museum', 'church', 'place_of_worship',
                 'park', 'restaurant', 'cafe', 'bar',
@@ -4654,39 +4643,33 @@ class MainWindow(QMainWindow):
             for p_type in poi_types:
                 try:
                     res = gmaps_client.places_nearby(location=search_coords, radius=radius_m, type=p_type, language='ro')
-                    places = res.get('results', [])
-                    for p in places:
+                    for p in res.get('results', []):
                         pid = p.get('place_id')
                         if pid in seen_ids: continue
-                        
                         revs = p.get('user_ratings_total', 0)
                         if revs < SAFETY_THRESHOLD: continue 
-                        
                         seen_ids.add(pid)
                         loc = p.get('geometry', {}).get('location', {})
-                        
-                        hotspot = {
+                        rating = p.get('rating', 0)
+                        if rating < 3.8: continue 
+
+                        all_hotspots.append({
                             'place_id': pid,
                             'name': p.get('name', 'N/A'),
                             'lat': loc.get('lat'),
                             'lng': loc.get('lng'),
-                            'rating': p.get('rating', 0),
+                            'rating': rating,
                             'reviews': revs,
                             'address': p.get('vicinity', ''),
                             'types': p.get('types', [])
-                        }
-                        all_hotspots.append(hotspot)
-                        
+                        })
                         if pid and loc.get('lat'):
-                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': hotspot['name']}
-                except Exception as e:
-                    log_debug(f"Err scan type {p_type}: {e}")
+                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': p.get('name')}
+                except: pass
 
-            # Sortăm baza de date
             all_hotspots.sort(key=lambda x: x['reviews'], reverse=True)
-            log_success(f"Bază de date scanată: {len(all_hotspots)} locuri totale (>10 recenzii).")
+            log_success(f"✅ Radar: {len(all_hotspots)} locuri valide.")
 
-            # --- DEFINIȚII HELPER ---
             def get_cat(types):
                 for k, v in CATEGORIES_MAP.items():
                     if any(t in types for t in v['keywords']): return k
@@ -4708,94 +4691,108 @@ class MainWindow(QMainWindow):
                     else: cnts['other'] += 1
                 return cnts
 
-            total_added = 0
+            total_v1 = 0
+            total_v2 = 0
+            total_v3 = 0
 
-            # --- PASUL 1: TOP GENERAL ---
+            # >>> PASUL 1: TOP GENERAL <<<
             if self.auto_add_hotspots_checkbox.isChecked():
-                try:
-                    limit_top = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    limit_top = 15
+                try: limit_v1 = int(self.auto_add_limit_entry.text().strip())
+                except: limit_v1 = 15
                 
-                log_info(f"--- PASUL 1: Top General (Max {limit_top}, Recenzii >= {user_min_reviews}) ---")
-                
-                step1_count = 0
+                log_info(f"\n🌊 [V1] Start Val 1: Top {limit_v1}")
+                count = 0
                 for h in all_hotspots:
-                    if step1_count >= limit_top: break
-                    
-                    if h['reviews'] < user_min_reviews: continue
-                    if h['rating'] < 4.0: continue
+                    if count >= limit_v1: break
+                    if h['reviews'] < min_reviews_top: continue
                     if h['place_id'] in selected_places: continue
                     if is_excluded(h['types']): continue
                     
                     cat = get_cat(h['types'])
                     inv = get_inventory()
-                    if cat in diversity_settings:
-                        max_allowed = diversity_settings[cat].get('max', 99)
-                        if inv.get(cat, 0) >= max_allowed: 
-                            # log_debug(f"Skip Top '{h['name']}' ({cat}) - Limită MAX atinsă ({max_allowed})")
-                            continue
+                    if cat in diversity_settings and inv.get(cat, 0) >= diversity_settings[cat].get('max', 99):
+                        continue
 
-                    self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                    step1_count += 1
-                    log_success(f"✅ [TOP] {h['name']} ({h['reviews']} recenzii) -> Cat: {cat}")
-                
-                total_added += step1_count
-            else:
-                log_info("--- Pasul 1 Sărit (Bifa Auto-Add Top nu e pusă) ---")
+                    display_name = f"[V1] {h['name']}"
+                    self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
+                    count += 1
+                    log_success(f"   + Adăugat: {h['name']}")
+                total_v1 = count
 
-            # --- PASUL 2: DIVERSITATE ---
+            # >>> PASUL 2: DIVERSITATE <<<
             if self.diversity_checkbox.isChecked():
-                log_info("--- PASUL 2: Completare Diversitate ---")
-                
-                # Logăm inventarul curent
-                curr_inv = get_inventory()
-                log_debug(f"Inventar după Pasul 1: {curr_inv}")
-                
-                for cat_key, rules in diversity_settings.items():
-                    target_min = rules.get('min', 0)
-                    min_rating = rules.get('min_rating', 0)
+                log_info("\n🌊 [V2] Start Val 2: Diversitate")
+                for cat, rules in diversity_settings.items():
+                    target = rules.get('min', 0)
+                    if target <= 0: continue
+                    curr = get_inventory().get(cat, 0)
+                    needed = target - curr
+                    if needed <= 0: continue
                     
-                    curr_val = curr_inv.get(cat_key, 0)
-                    needed = target_min - curr_val
+                    # Diversitatea IGNORĂ limita de 500 (vrea calitate specifică)
+                    cands = [h for h in all_hotspots if 
+                             h['place_id'] not in selected_places and 
+                             h['rating'] >= rules.get('min_rating', 0) and 
+                             not is_excluded(h['types']) and 
+                             get_cat(h['types']) == cat]
+                    cands.sort(key=lambda x: x['reviews'], reverse=True)
                     
-                    log_debug(f"🔎 Analiză '{cat_key}': Am {curr_val} / Vreau Minim {target_min}. (Rating {min_rating}+)")
-                    
-                    if target_min <= 0:
-                        # log_debug(f"   -> Skip (Minimul cerut este 0)")
-                        continue
-                        
-                    if needed <= 0: 
-                        # log_debug(f"   -> OK (Am destule)")
-                        continue
-                    
-                    log_info(f"   👉 Trebuie să găsesc încă {needed} x {cat_key}...")
-                    
-                    # Căutăm candidați în TOATĂ lista
-                    candidates = []
-                    for h in all_hotspots:
-                        if h['place_id'] in selected_places: continue
-                        if h['rating'] < min_rating: continue
-                        if is_excluded(h['types']): continue
-                        
-                        if get_cat(h['types']) == cat_key: 
-                            candidates.append(h)
-                    
-                    # Sortăm după relevanță
-                    candidates.sort(key=lambda x: x['reviews'], reverse=True)
-                    log_debug(f"   -> Candidați disponibili în DB: {len(candidates)}")
-                    
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                        total_added += 1
-                        log_success(f"⚖️ [DIVERSITATE] Adăugat: {h['name']} ({h['reviews']} recenzii)")
-            else:
-                log_warning("⚠️ Pasul 2 (Diversitate) SĂRIT! Bifa nu este activă.")
+                    for h in cands[:needed]:
+                        display_name = f"[V2] {h['name']}"
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
+                        total_v2 += 1
+                        log_success(f"   + Adăugat: {h['name']}")
 
+            # >>> PASUL 3: GEOGRAFIC (STRICT) <<<
+            if self.geo_coverage_checkbox.isChecked():
+                try: limit_v3 = int(self.geo_limit_entry.text().strip())
+                except: limit_v3 = 3
+                
+                try: min_dist_m = int(self.geo_dist_entry.text().strip())
+                except: min_dist_m = 500 
+                
+                log_info(f"\n🌊 [V3] Start Val 3: Geografic (Max {limit_v3}, Dist > {min_dist_m}m, STRICT {min_reviews_top}+ Recenzii)")
+                
+                added_v3 = 0
+                
+                for h in all_hotspots:
+                    if added_v3 >= limit_v3: break
+                    
+                    # --- FILTRU STRICT PENTRU V3 ---
+                    if h['reviews'] < min_reviews_top: continue # Numai locuri "Verzi"
+                    
+                    if h['place_id'] in selected_places: continue
+                    if h['rating'] < 4.0: continue 
+                    if is_excluded(h['types']): continue
+                    
+                    my_lat = h['lat']
+                    my_lng = h['lng']
+                    is_isolated = True
+                    
+                    for pid, pdata in selected_places.items():
+                        p_coords = route_places_coords.get(pid)
+                        if not p_coords:
+                             f = next((x for x in all_hotspots if x['place_id'] == pid), None)
+                             if f: p_coords = {'lat': f['lat'], 'lng': f['lng']}
+                        
+                        if p_coords:
+                            d = haversine_distance(my_lat, my_lng, p_coords['lat'], p_coords['lng'])
+                            if d < min_dist_m:
+                                is_isolated = False
+                                break
+                    
+                    if is_isolated:
+                        display_name = f"[V3] {h['name']}"
+                        special_types = h['types'] + ['poi_geographic']
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], 'N/A', Qt.Checked.value, special_types)
+                        added_v3 += 1
+                        total_v3 += 1
+                        log_success(f"   + Adăugat [V3]: {h['name']} (Zonă nouă!)")
+
+            # --- FINAL ---
             self.clear_results()
             
-            # Afișăm pe hartă DOAR ce a cerut userul (vizual)
-            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= user_min_reviews]
+            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= min_reviews_top]
             if visual_hotspots:
                 js_code = f"addHotspotMarkers({json.dumps(visual_hotspots)});"
                 self.web_view.page().runJavaScript(js_code)
@@ -4805,249 +4802,19 @@ class MainWindow(QMainWindow):
             header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #e65100;")
             self.results_layout.addWidget(header)
             
-            msg_text = "S-au scanat " + str(len(all_hotspots)) + " locații." + "\n" + "Adăugate în traseu: " + str(total_added) + "."
-            summary = QLabel(msg_text)
-            summary.setStyleSheet("font-size: 11pt; padding: 10px;")
-            self.results_layout.addWidget(summary)
-            self.results_layout.addStretch()
-            
-        except Exception as e:
-            log_error(f"Eroare la scanarea hotspots: {e}")
-            traceback.print_exc()
-            self.clear_results()
-            error_label = QLabel(f"❌ Eroare: {e}")
-            self.results_layout.addWidget(error_label)
-        
-        # --- DIAGNOSTIC START ---
-        # Vedem exact ce butoane sunt apăsate
-        log_debug(f"STATUS BIFE:")
-        log_debug(f"  > Auto Add Top: {self.auto_add_hotspots_checkbox.isChecked()}")
-        log_debug(f"  > Diversitate: {self.diversity_checkbox.isChecked()}")
-        
-        # 1. Input Utilizator (Recenzii minime pentru TOP)
-        try:
-            user_min_reviews = int(self.min_reviews_entry.text().strip())
-            if user_min_reviews < 1: user_min_reviews = 100
-        except:
-            user_min_reviews = 100
-            
-        # 2. Coordonate
-        search_coords = None
-        search_mode = self.get_search_type()
-        
-        if search_mode == "my_position":
-            coords_text = self.my_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "explore":
-            coords_text = self.explore_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "saved_location":
-            selected_name = self.location_combo.currentText()
-            if selected_name and selected_name in saved_locations:
-                coords_text = saved_locations[selected_name]
-                search_coords = parse_coordinates(coords_text)
-        
-        if not search_coords:
-            QMessageBox.warning(self, "Eroare", "Nu sunt setate coordonate pentru căutare.")
-            return
-            
-        # 3. Raza
-        try:
-            radius_m = int(float(self.radius_entry.text().strip()) * 1000)
-        except:
-            radius_m = 1500
-            
-        log_info(f"Parametri: Centru={search_coords}, Rază={radius_m}m, Filtru User (doar pt Top)={user_min_reviews}")
-        
-        self.clear_results()
-        loading = QLabel("🚀 Scanez satelitul pentru obiective...")
-        loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
-        self.results_layout.addWidget(loading)
-        QApplication.processEvents()
-        
-        try:
-            # Lista extinsă de tipuri pentru a prinde tot ce ne trebuie
-            poi_types = [
-                'tourist_attraction', 'museum', 'church', 'place_of_worship',
-                'park', 'restaurant', 'cafe', 'bar',
-                'shopping_mall', 'store', 'pharmacy', 'bank', 'hospital'
-            ]
-            
-            all_hotspots = []
-            seen_ids = set()
-            
-            # COLECTARE DATE: Luăm tot ce e decent (>10 recenzii)
-            # NU filtrăm aici cu user_min_reviews (500), ca să avem ce alege la Diversitate
-            SAFETY_THRESHOLD = 10 
-            
-            for p_type in poi_types:
-                try:
-                    res = gmaps_client.places_nearby(location=search_coords, radius=radius_m, type=p_type, language='ro')
-                    places = res.get('results', [])
-                    for p in places:
-                        pid = p.get('place_id')
-                        if pid in seen_ids: continue
-                        
-                        revs = p.get('user_ratings_total', 0)
-                        if revs < SAFETY_THRESHOLD: continue 
-                        
-                        seen_ids.add(pid)
-                        loc = p.get('geometry', {}).get('location', {})
-                        
-                        hotspot = {
-                            'place_id': pid,
-                            'name': p.get('name', 'N/A'),
-                            'lat': loc.get('lat'),
-                            'lng': loc.get('lng'),
-                            'rating': p.get('rating', 0),
-                            'reviews': revs,
-                            'address': p.get('vicinity', ''),
-                            'types': p.get('types', [])
-                        }
-                        all_hotspots.append(hotspot)
-                        
-                        # Salvăm coordonatele pentru hartă
-                        if pid and loc.get('lat'):
-                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': hotspot['name']}
-                except Exception as e:
-                    log_debug(f"Err scan type {p_type}: {e}")
-
-            # Sortăm baza de date descrescător după popularitate
-            all_hotspots.sort(key=lambda x: x['reviews'], reverse=True)
-            log_success(f"Bază de date scanată: {len(all_hotspots)} locuri totale (>10 recenzii).")
-
-            # --- DEFINIȚII HELPER ---
-            def get_cat(types):
-                for k, v in CATEGORIES_MAP.items():
-                    if any(t in types for t in v['keywords']): return k
-                return 'other'
-            
-            def is_excluded(types):
-                return any(t in ['lodging', 'parking', 'gas_station'] for t in types)
-
-            def get_inventory():
-                cnts = {k: 0 for k in CATEGORIES_MAP.keys()}
-                cnts['other'] = 0
-                for pid, data in selected_places.items():
-                    pts = data.get('types', [])
-                    if not pts:
-                        # Încercăm să găsim tipurile în ce am scanat acum
-                        f = next((x for x in all_hotspots if x['place_id'] == pid), None)
-                        if f: pts = f['types']
-                    c = get_cat(pts)
-                    if c in cnts: cnts[c] += 1
-                    else: cnts['other'] += 1
-                return cnts
-
-            total_added = 0
-
-            # --- PASUL 1: TOP GENERAL (Respectă Strict User Limit) ---
-            if self.auto_add_hotspots_checkbox.isChecked():
-                try:
-                    limit_top = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    limit_top = 15
-                
-                log_info(f"--- PASUL 1: Top General (Max {limit_top}, Recenzii >= {user_min_reviews}) ---")
-                
-                step1_count = 0
-                for h in all_hotspots:
-                    if step1_count >= limit_top: break
-                    
-                    # AICI se aplică filtrul strict (ex: 500)
-                    if h['reviews'] < user_min_reviews: continue
-                    if h['rating'] < 4.0: continue
-                    if h['place_id'] in selected_places: continue
-                    if is_excluded(h['types']): continue
-                    
-                    # Verificăm dacă am depășit maximul permis pentru categoria asta
-                    cat = get_cat(h['types'])
-                    inv = get_inventory()
-                    if cat in diversity_settings:
-                        max_allowed = diversity_settings[cat].get('max', 99)
-                        if inv.get(cat, 0) >= max_allowed: 
-                            log_debug(f"Skip Top '{h['name']}' ({cat}) - Limită MAX atinsă ({max_allowed})")
-                            continue
-
-                    self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                    step1_count += 1
-                    log_success(f"✅ [TOP] {h['name']} ({h['reviews']} recenzii)")
-                
-                total_added += step1_count
-            else:
-                log_info("--- Pasul 1 Sărit (Bifa Auto-Add Top nu e pusă) ---")
-
-            # --- PASUL 2: DIVERSITATE (Relaxat - Caută și sub 500) ---
-            if self.diversity_checkbox.isChecked():
-                log_info("--- PASUL 2: Completare Diversitate ---")
-                
-                for cat_key, rules in diversity_settings.items():
-                    target_min = rules.get('min', 0)
-                    if target_min <= 0: continue
-                    
-                    inv = get_inventory()
-                    curr = inv.get(cat_key, 0)
-                    needed = target_min - curr
-                    
-                    log_info(f"🔍 Analiză '{cat_key.upper()}': Am {curr}, Vreau Minim {target_min}. Necesar: {needed}")
-                    
-                    if needed <= 0: 
-                        continue
-                    
-                    min_rating = rules.get('min_rating', 0)
-                    
-                    # Căutăm candidați în TOATĂ lista (all_hotspots), nu doar în cele populare
-                    candidates = []
-                    for h in all_hotspots:
-                        if h['place_id'] in selected_places: continue
-                        
-                        # Filtre specifice diversitate
-                        if h['rating'] < min_rating: continue
-                        if is_excluded(h['types']): continue
-                        
-                        # Verificăm categoria
-                        if get_cat(h['types']) == cat_key: 
-                            candidates.append(h)
-                    
-                    # Sortăm după relevanță (număr recenzii), ca să luăm "Catedralele", nu capelele mici
-                    candidates.sort(key=lambda x: x['reviews'], reverse=True)
-                    log_info(f"   -> Candidați valizi găsiți: {len(candidates)}")
-                    
-                    # Adăugăm câți avem nevoie
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                        total_added += 1
-                        log_success(f"⚖️ [DIVERSITATE] Adăugat: {h['name']} ({h['reviews']} recenzii)")
-            else:
-                log_warning("⚠️ Pasul 2 (Diversitate) SĂRIT! Bifa nu este activă.")
-
-            self.clear_results()
-            
-            # Afișăm pe hartă DOAR ce a cerut userul (vizual)
-            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= user_min_reviews]
-            if visual_hotspots:
-                js_code = f"addHotspotMarkers({json.dumps(visual_hotspots)});"
-                self.web_view.page().runJavaScript(js_code)
-                self.show_hotspots_checkbox.setChecked(True)
-            
-            header = QLabel("🔥 Rezultate Scanare")
-            header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #e65100;")
-            self.results_layout.addWidget(header)
-            
-            msg = "S-au scanat " + str(len(all_hotspots)) + " locații." + "\n" + "Adăugate în traseu: " + str(total_added) + "."
+            msg = f"Total: {total_v1 + total_v2 + total_v3}\n[V1] Top: {total_v1}\n[V2] Div: {total_v2}\n[V3] Geo: {total_v3}"
             summary = QLabel(msg)
-            summary.setStyleSheet("font-size: 11pt; padding: 10px;")
+            summary.setStyleSheet("font-size: 11pt; padding: 10px; font-family: monospace;")
             self.results_layout.addWidget(summary)
             self.results_layout.addStretch()
             
         except Exception as e:
-            log_error(f"Eroare la scanarea hotspots: {e}")
+            log_error(f"Err: {e}")
             traceback.print_exc()
-            self.clear_results()
-            error_label = QLabel(f"❌ Eroare: {e}")
-            self.results_layout.addWidget(error_label)
-
-    
+        finally:
+            if isinstance(sender_btn, QPushButton):
+                sender_btn.setEnabled(True)
+                sender_btn.setText(original_text if original_text else "🔥 Scanează")
     def create_hotspot_card(self, hotspot, rank):
         """Creează un card pentru un hotspot."""
         global selected_places
