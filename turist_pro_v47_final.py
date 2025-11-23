@@ -8,7 +8,24 @@ import json
 import webbrowser
 import math
 
-from PySide6.QtWidgets import (
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculează distanța în metri între două coordonate GPS."""
+    try:
+        R = 6371000  # Raza Pământului în metri
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        
+        a = math.sin(dphi / 2)**2 + \
+            math.cos(phi1) * math.cos(phi2) * \
+            math.sin(dlambda / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+    except:
+        return 0.0
+
+from PySide6.QtWidgets import (QTabBar, 
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QRadioButton, QCheckBox, QTextEdit,
     QFrame, QScrollArea, QComboBox, QTabWidget, QListWidget, QDialog,
@@ -52,6 +69,9 @@ def log_success(message):
 
 def log_error(message):
     print(f"{Colors.FAIL}{Colors.BOLD}[ERROR] {message}{Colors.ENDC}")
+
+def log_warning(message):
+    print(f"{Colors.WARNING}[WARNING] {message}{Colors.ENDC}")
 
 def log_info(message):
     print(f"{Colors.HEADER}[INFO] {message}{Colors.ENDC}")
@@ -1100,35 +1120,34 @@ class SettingsDialog(QDialog):
 
 
 # --- Helper Categorii (Dinamic) ---
+# --- Helper Categorii (Dinamic) ---
+# --- Helper Categorii (Dinamic) ---
 def get_category_label(types_list):
     if not types_list: return "📍 Locație"
     
-    # 1. Căutăm în harta noastră extinsă
     for cat_key, data in CATEGORIES_MAP.items():
         if any(t in types_list for t in data['keywords']):
-            # Întoarcem eticheta categoriei principale (ex: "☕ Cafenele/Patiserii")
             return data['label']
             
-    # 2. Fallback-uri specifice pentru ce nu e în harta diversitate
     simple_map = {
         'lodging': '🏨 Hotel/Cazare',
         'parking': '🅿️ Parcare',
         'school': '🎓 Școală',
         'university': '🎓 Universitate',
         'hospital': '🏥 Spital',
-        'police': '👮 Poliție'
+        'police': '👮 Poliție',
+        'poi_geographic': '🌐 Zonă Activă'
     }
     for t in types_list:
         if t in simple_map: return simple_map[t]
 
-    # 3. Fallback generic
     return "📍 " + types_list[0].replace('_', ' ').capitalize()
 
 class RouteItemWidget(QFrame):
-    """Widget personalizat robust pentru lista de traseu."""
+    """Widget V43: Design Final (Compact, Clean, Interactive)."""
     lockChanged = Signal(str, bool)
     
-    def __init__(self, place_id, name, address, main_window, index=1, initial_color=None, rating='N/A', reviews_count=0, is_open_status='Program necunoscut', place_types=None, parent=None):
+    def __init__(self, place_id, name, address, main_window, index=1, initial_color=None, rating='N/A', reviews_count=0, is_open_status='Program necunoscut', place_types=None, route_info=None, website=None, parent=None):
         super().__init__(parent)
         self.place_id = place_id
         self.place_types = place_types or []
@@ -1137,310 +1156,176 @@ class RouteItemWidget(QFrame):
         self.rating = rating
         self.reviews_count = reviews_count
         self.is_open_status = is_open_status
+        self.route_info = route_info
+        self.website = website 
         self.main_window = main_window
         self.index = index
         
-        # Stil card: fundal alb, margine jos, puțin padding
-        self.setStyleSheet("QFrame { background-color: white; border-bottom: 1px solid #e0e0e0; }")
-        self.setMinimumHeight(75) # Compact pe 2 rânduri
+        # Stil general: Doar linia de jos, fără borduri interne
+        self.setStyleSheet("""
+            QFrame { background-color: white; border-bottom: 1px solid #e0e0e0; }
+            QLabel { border: none; }
+        """)
+        # Înălțime compactă
+        self.setMinimumHeight(68)
         
-        # Layout Principal Orizontal
+        # Layout Principal
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(2, 4, 2, 4) 
+        layout.setSpacing(5)
         
-        # 1. Checkbox Imobilizare
+        # 1. Checkbox
         self.lock_checkbox = QCheckBox()
-        self.lock_checkbox.setToolTip("Bifează pentru a fixa acest punct în ordine")
-        self.lock_checkbox.setStyleSheet("QCheckBox::indicator { width: 18px; height: 18px; }")
+        self.lock_checkbox.setToolTip("Imobilizează")
         self.lock_checkbox.stateChanged.connect(self.on_lock_changed)
         layout.addWidget(self.lock_checkbox)
         
-        # 2. Bulina cu Număr
+        # 2. Bulina Index
         self.index_label = QLabel(str(index))
-        self.index_label.setFixedSize(28, 28)
+        self.index_label.setFixedSize(24, 24)
         self.index_label.setAlignment(Qt.AlignCenter)
-        
-        # Folosim culoarea primită sau o calculăm pe baza indexului
-        if initial_color:
-            self.initial_color = initial_color
-        else:
-            self.initial_color = self.get_marker_color(index)
-        
+        self.initial_color = initial_color if initial_color else self.get_marker_color(index)
         self.update_index_style(index)
         layout.addWidget(self.index_label)
         
-        # 3. Zona Text (Nume + Info pe 2 rânduri) - Verticală
+        # 3. Text (Vertical)
         text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
-        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(0) 
+        text_layout.setContentsMargins(2, 0, 0, 0)
         
-        # RÂNDUL 1: Numele Locației (clickable, bold)
+        # R1: Nume
         self.name_label = ClickableLabel(name)
-        self.name_label.setStyleSheet("font-weight: bold; font-size: 13pt; color: #2c3e50;")
-        self.name_label.setWordWrap(True)
+        self.name_label.setStyleSheet("font-weight: bold; font-size: 12pt; color: #2c3e50; border: none;")
         self.name_label.clicked.connect(self.show_on_map)
         text_layout.addWidget(self.name_label)
         
-        # Verificăm dacă este un punct intermediar (waypoint) sau un loc Google real
-        # Waypoint-urile generate de aplicație au ID-ul care începe cu "waypoint_"
-        is_waypoint = place_id.startswith('waypoint_')
-        
-        if is_waypoint:
-            # --- STIL SIMPLIFICAT PENTRU PUNCTE INTERMEDIARE ---
-            waypoint_label = QLabel("📍 Punct intermediar")
-            waypoint_label.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 10pt; margin-top: 2px;")
-            text_layout.addWidget(waypoint_label)
+        # R2: Info Traseu
+        cat_text = get_category_label(self.place_types)
+        if self.route_info:
+            row2_text = f"{cat_text}  ➜  🚶 {self.route_info}"
+            row2_style = "color: #2e7d32; font-weight: bold; font-size: 10pt; border: none;"
         else:
-            # --- STIL STANDARD PENTRU LOCURI GOOGLE ---
-            
-            # 1. Afișăm Categoria (NOU)
-            cat_text = get_category_label(self.place_types)
-            category_label = QLabel(cat_text)
-            category_label.setStyleSheet("color: #009688; font-weight: bold; font-size: 10pt; margin-bottom: 2px;")
-            text_layout.addWidget(category_label)
-
-            # 2. RÂNDUL 3: Rating + Recenzii + Status
-            
-            # RÂNDUL 2: Rating + Recenzii + Status (pe același rând, compact)
-            info_line_layout = QHBoxLayout()
-            info_line_layout.setSpacing(8)
-            info_line_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Rating
-            rating_text = f"⭐ {rating}" if rating != 'N/A' else "⭐ -"
-            rating_label = QLabel(rating_text)
-            rating_label.setStyleSheet("font-size: 11pt; font-weight: bold; color: #f57c00;")
-            info_line_layout.addWidget(rating_label)
-            
-            # Recenzii
-            reviews_text = f"📝 {reviews_count}"
-            reviews_label = QLabel(reviews_text)
-            reviews_label.setStyleSheet("font-size: 11pt; font-weight: bold; color: #1976d2;")
-            info_line_layout.addWidget(reviews_label)
-            
-            # Status (Deschis/Închis)
-            status_label = QLabel(f"🕒 {is_open_status}")
-            status_label.setStyleSheet("font-size: 11pt; color: #666;")
-            info_line_layout.addWidget(status_label)
-            
-            info_line_layout.addStretch()
-            text_layout.addLayout(info_line_layout)
+            row2_text = cat_text
+            row2_style = "color: #7f8c8d; font-size: 10pt; border: none;"
         
-        # Detalii (Distanță/Timp) - se pot adăuga dinamic după calcul traseu (Afișate la ambele)
-        self.details_label = QLabel("")
-        self.details_label.setStyleSheet("color: #555; font-size: 10pt; font-style: italic;")
-        self.details_label.setWordWrap(True)
-        self.details_label.setVisible(False)
-        text_layout.addWidget(self.details_label)
+        self.info_label = QLabel(row2_text)
+        self.info_label.setStyleSheet(row2_style)
+        text_layout.addWidget(self.info_label)
         
-        layout.addLayout(text_layout, 1) # Stretch (ocupă tot spațiul liber)
+        # R3: Stats Clickabile + Status
+        stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(8)
+        stats_layout.setContentsMargins(0, 1, 0, 0)
         
-        # 4. Butoane - LE AFIȘĂM DOAR DACĂ NU ESTE WAYPOINT
-        if not is_waypoint:
-            btns_layout = QHBoxLayout()
-            btns_layout.setSpacing(4)
-            btns_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Buton Web - mai compact
+        rating_val = f"{rating}" if rating != 'N/A' else "-"
+        reviews_val = f"{reviews_count}"
+        
+        stats_html = (f"<span style='color:#f57c00; font-weight:bold;'>⭐ {rating_val}</span>"
+                      f"&nbsp;&nbsp;"
+                      f"<span style='color:#1976d2; font-weight:bold;'>📝 {reviews_val}</span>")
+        
+        self.stats_clickable = ClickableLabel(stats_html)
+        self.stats_clickable.setCursor(Qt.PointingHandCursor)
+        self.stats_clickable.setToolTip("Citește Recenziile")
+        self.stats_clickable.clicked.connect(self.open_reviews_dialog)
+        stats_layout.addWidget(self.stats_clickable)
+        
+        self.status_label = QLabel(f"🕒 {is_open_status}")
+        self.status_label.setStyleSheet("color: #555; font-size: 10pt; border: none;")
+        stats_layout.addWidget(self.status_label)
+        
+        stats_layout.addStretch()
+        text_layout.addLayout(stats_layout)
+        
+        layout.addLayout(text_layout, 1) 
+        
+        # 4. Butoane (80x36)
+        btns_layout = QHBoxLayout()
+        btns_layout.setSpacing(4)
+        
+        BTN_W = 80
+        BTN_H = 36
+        
+        if self.website:
             web_btn = QPushButton("🌐")
-            web_btn.setFixedSize(36, 36)
-            web_btn.setToolTip("Website")
+            web_btn.setFixedSize(BTN_W, BTN_H)
+            web_btn.setToolTip(f"Website: {self.website}")
             web_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f8f9fa;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    font-size: 14pt;
-                    padding: 2px;
-                }
-                QPushButton:hover {
-                    background-color: #dcdcdc;
-                    border-color: #999;
-                }
+                QPushButton { background-color: #f8f9fa; border: 1px solid #ccc; border-radius: 4px; font-size: 16pt; }
+                QPushButton:hover { background-color: #e2e6ea; }
             """)
             web_btn.clicked.connect(self.open_website)
             btns_layout.addWidget(web_btn)
-            
-            # Buton Opinii - mai compact
-            ai_btn = QPushButton("🗣️")
-            ai_btn.setFixedSize(36, 36)
-            ai_btn.setToolTip("Opinii AI")
-            ai_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #e3f2fd;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    font-size: 14pt;
-                    padding: 2px;
-                }
-                QPushButton:hover {
-                    background-color: #dcdcdc;
-                    border-color: #999;
-                }
-            """)
-            ai_btn.clicked.connect(lambda: self.generate_ai_summary(ai_btn))
-            btns_layout.addWidget(ai_btn)
-            
-            # Buton Info - mai compact
-            info_btn = QPushButton("📖")
-            info_btn.setFixedSize(36, 36)
-            info_btn.setToolTip("Info")
-            info_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #fff3e0;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    font-size: 14pt;
-                    padding: 2px;
-                }
-                QPushButton:hover {
-                    background-color: #dcdcdc;
-                    border-color: #999;
-                }
-            """)
-            info_btn.clicked.connect(lambda: self.show_history(info_btn))
-            btns_layout.addWidget(info_btn)
-            
-            layout.addLayout(btns_layout)
+        
+        ai_btn = QPushButton("🗣️")
+        ai_btn.setFixedSize(BTN_W, BTN_H)
+        ai_btn.setToolTip("Analiză AI")
+        ai_btn.setStyleSheet("""
+            QPushButton { background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 4px; font-size: 16pt; }
+            QPushButton:hover { background-color: #bbdefb; }
+        """)
+        ai_btn.clicked.connect(lambda: self.generate_ai_summary(ai_btn))
+        btns_layout.addWidget(ai_btn)
+        
+        info_btn = QPushButton("📖")
+        info_btn.setFixedSize(BTN_W, BTN_H)
+        info_btn.setToolTip("Info Enciclopedice")
+        info_btn.setStyleSheet("""
+            QPushButton { background-color: #fff3e0; border: 1px solid #ffcc80; border-radius: 4px; font-size: 16pt; }
+            QPushButton:hover { background-color: #ffe0b2; }
+        """)
+        info_btn.clicked.connect(lambda: self.show_history(info_btn))
+        btns_layout.addWidget(info_btn)
+        
+        layout.addLayout(btns_layout)
 
     def sizeHint(self):
-        return QSize(0, 75)
-
-    def set_details(self, text):
-        if text:
-            self.details_label.setText(text)
-            self.details_label.setVisible(True)
-        else:
-            self.details_label.setVisible(False)
+        return QSize(0, 70)
 
     def update_index_style(self, index):
-        self.index_label.setStyleSheet(f"""
-            background-color: {self.initial_color};
-            color: white; border-radius: 16px; font-weight: bold; font-size: 12pt;
-        """)
+        self.index_label.setStyleSheet(f"background-color: {self.initial_color}; color: white; border-radius: 12px; font-weight: bold; font-size: 10pt;")
     
+    def get_marker_color(self, index):
+        colors = ['#4285f4', '#ea4335', '#fbbc05', '#34a853', '#9c27b0', '#ff5722', '#00bcd4', '#e91e63', '#795548', '#607d8b']
+        return colors[(index - 1) % 10]
+
     def on_lock_changed(self, state):
-        """Emite semnal când se schimbă starea de blocare."""
         self.lockChanged.emit(self.place_id, state == Qt.Checked.value)
     
     def is_locked(self):
-        """Returnează True dacă punctul este imobilizat."""
         return self.lock_checkbox.isChecked()
     
     def set_locked(self, locked):
-        """Setează starea de blocare."""
         self.lock_checkbox.setChecked(locked)
     
     def set_lock_enabled(self, enabled):
-        """Activează/dezactivează checkbox-ul de blocare."""
         self.lock_checkbox.setEnabled(enabled)
     
-    def get_marker_color(self, index):
-        """Returnează culoarea pentru index (aceleași culori ca în JavaScript)."""
-        colors = [
-            '#4285f4',  # Albastru
-            '#ea4335',  # Roșu
-            '#fbbc05',  # Galben
-            '#34a853',  # Verde
-            '#9c27b0',  # Mov
-            '#ff5722',  # Portocaliu
-            '#00bcd4',  # Cyan
-            '#e91e63',  # Roz
-            '#795548',  # Maro
-            '#607d8b'   # Gri-albastru
-        ]
-        return colors[(index - 1) % len(colors)]
-    
     def update_index(self, new_index):
-        """Actualizează indexul afișat, păstrând culoarea inițială."""
         self.index = new_index
         self.index_label.setText(str(new_index))
-        # Folosim culoarea inițială salvată, nu culoarea noului index
-        self.index_label.setStyleSheet(f"""
-            background-color: {self.initial_color};
-            color: white;
-            border-radius: 12px;
-            font-weight: bold;
-            font-size: 10pt;
-        """)
-    
-    def show_on_map(self):
-        """Arată locația pe hartă."""
-        global route_places_coords
-        if self.place_id in route_places_coords:
-            coords = route_places_coords[self.place_id]
-            self.main_window.update_map_image(coords['lat'], coords['lng'], self.name, None, self.place_id)
-        else:
-            try:
-                details = gmaps_client.place(place_id=self.place_id, fields=['geometry'], language='ro')
-                loc = details.get('result', {}).get('geometry', {}).get('location', {})
-                if loc:
-                    route_places_coords[self.place_id] = {'lat': loc['lat'], 'lng': loc['lng']}
-                    self.main_window.update_map_image(loc['lat'], loc['lng'], self.name, None, self.place_id)
-            except Exception as e:
-                log_error(f"Nu s-au putut obține coordonatele: {e}")
-    
-    def open_website(self):
-        """Deschide website-ul locației."""
-        try:
-            details = gmaps_client.place(place_id=self.place_id, fields=['website'], language='ro')
-            website = details.get('result', {}).get('website')
-            if website:
-                webbrowser.open(website)
-            else:
-                QMessageBox.information(self.main_window, "Info", f"'{self.name}' nu are website.")
-        except Exception as e:
-            log_error(f"Eroare: {e}")
-    
-    def generate_ai_summary(self, button):
-        """Generează rezumat AI pentru recenzii."""
-        button.setEnabled(False)
-        button.setText("⏳")
-        QApplication.processEvents()
-        
-        try:
-            details = gmaps_client.place(place_id=self.place_id, fields=['review'], language='ro')
-            reviews = details.get('result', {}).get('reviews', [])
-            
-            if not reviews:
-                QMessageBox.information(self.main_window, "Info", "Nu există recenzii.")
-            else:
-                summary = get_ai_summary(reviews, self.name)
-                dialog = QDialog(self.main_window)
-                dialog.setWindowTitle(f"✨ Rezumat AI - {self.name}")
-                dialog.resize(550, 450)
-                layout = QVBoxLayout(dialog)
-                text = QTextEdit()
-                text.setReadOnly(True)
-                text.setText(summary)
-                layout.addWidget(text)
-                dialog.exec()
-        except Exception as e:
-            log_error(f"Eroare: {e}")
-        
-        button.setEnabled(True)
-        button.setText("🗣️")
-    
-    def show_history(self, button):
-        """Afișează informații despre locație."""
-        button.setEnabled(False)
-        button.setText("⏳")
-        QApplication.processEvents()
-        
-        try:
-            details = gmaps_client.place(place_id=self.place_id, fields=['formatted_address'], language='ro')
-            address = details.get('result', {}).get('formatted_address', '')
-        except:
-            address = ''
-        
-        info = get_history_info(self.name, address)
-        dialog = HistoryDialog(self.name, info, self.main_window)
-        dialog.exec()
-        
-        button.setEnabled(True)
-        button.setText("📖")
+        self.index_label.setStyleSheet(f"background-color: {self.initial_color}; color: white; border-radius: 12px; font-weight: bold; font-size: 10pt;")
 
+    def show_on_map(self):
+        global route_places_coords
+        c = route_places_coords.get(self.place_id)
+        if c:
+            self.main_window.update_map_image(c['lat'], c['lng'], self.name, None, self.place_id)
+            
+    def open_website(self):
+        self.main_window.open_website(self.place_id, self.name)
+        
+    def generate_ai_summary(self, btn):
+        self.main_window.generate_ai_summary_from_card(self.place_id, self.name, btn)
+        
+    def show_history(self, btn):
+        self.main_window.show_history_window(self.name, self.address, btn)
+        
+    def open_reviews_dialog(self):
+        self.main_window.show_reviews_dialog(self.place_id, self.name)
+        
+    def set_details(self, txt):
+        pass 
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -1583,412 +1468,345 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(10, 10, 10, 10)
         
         # Top panel cu controale
-        top_panel = QWidget()
-        top_layout = QVBoxLayout(top_panel)
-        top_layout.setContentsMargins(0, 0, 0, 10)
+
+        # --- UI MODERN START ---
+        top_container = QWidget()
+        top_layout = QHBoxLayout(top_container)
+        top_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         
-        controls_frame = QWidget()
-        controls_layout = QGridLayout(controls_frame)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
+        # GRUP 1
+        # --- GRUP 1: CONFIGURARE ZONĂ (V31 - Lat 540px & Butoane 120px) ---
+        # --- GRUP 1: CONFIGURARE ZONĂ (V32 - Salvat Extins) ---
+        # --- GRUP 1: CONFIGURARE ZONĂ (V33 - Adresă Salvată Activă) ---
+        g1 = QGroupBox("1. Configurare Zonă")
+        g1.setFixedWidth(460)
+        l1 = QVBoxLayout(g1)
         
-        # Coloana stânga
-        left_controls = QWidget()
-        left_layout = QHBoxLayout(left_controls)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Tipul de căutare
-        search_type_group = QGroupBox("Tip Căutare:")
-        search_type_layout = QVBoxLayout(search_type_group)
-        
+        gr = QGridLayout()
         self.search_type_group = QButtonGroup(self)
         
-        self.radio_my_position = QRadioButton("📍 Lângă mine")
-        self.radio_my_position.setChecked(True)
-        self.search_type_group.addButton(self.radio_my_position)
-        search_type_layout.addWidget(self.radio_my_position)
+        self.radio_my_position = QRadioButton("Lângă mine"); self.radio_my_position.setChecked(True); self.search_type_group.addButton(self.radio_my_position); gr.addWidget(self.radio_my_position,0,0)
+        self.radio_explore = QRadioButton("Explorare"); self.search_type_group.addButton(self.radio_explore); gr.addWidget(self.radio_explore,0,1)
+        self.radio_saved_location = QRadioButton("Salvat"); self.search_type_group.addButton(self.radio_saved_location); gr.addWidget(self.radio_saved_location,1,0)
+        self.radio_text = QRadioButton("Text"); self.search_type_group.addButton(self.radio_text); gr.addWidget(self.radio_text,1,1)
+        l1.addLayout(gr)
         
-        self.radio_saved_location = QRadioButton("🏠 Lângă locație salvată")
-        self.search_type_group.addButton(self.radio_saved_location)
-        search_type_layout.addWidget(self.radio_saved_location)
+        INPUT_H = 30
         
-        self.radio_explore = QRadioButton("🗺️ Explorare zonă")
-        self.search_type_group.addButton(self.radio_explore)
-        search_type_layout.addWidget(self.radio_explore)
+        # --- CONTAINER: LÂNGĂ MINE ---
+        self.c_my = QWidget(); l_my = QVBoxLayout(self.c_my); l_my.setContentsMargins(0,0,0,0)
+        h_my = QHBoxLayout(); 
+        h_my.addWidget(QLabel("Coord:")) 
         
-        self.radio_text = QRadioButton("🔍 Căutare text")
-        self.search_type_group.addButton(self.radio_text)
-        search_type_layout.addWidget(self.radio_text)
-        
-        left_layout.addWidget(search_type_group)
-        
-        # Controale specifice
-        search_controls = QWidget()
-        search_controls_layout = QVBoxLayout(search_controls)
-        search_controls_layout.setContentsMargins(10, 0, 0, 0)
-        
-        # Controale pentru "Lângă mine"
-        my_position_frame = QHBoxLayout()
-        my_position_frame.addWidget(QLabel("Poziția mea curentă:"))
         self.my_coords_entry = QLineEdit()
-        self.my_coords_entry.setFixedWidth(200)
-        my_position_frame.addWidget(self.my_coords_entry)
+        self.my_coords_entry.setFixedHeight(INPUT_H)
+        h_my.addWidget(self.my_coords_entry)
         
-# --- Butonul 1: Poziția mea ---
-        self.my_coords_geo_btn = QPushButton("📍")
-        self.my_coords_geo_btn.setFixedWidth(45) # Lățime mai mare (era 30/35)
-        self.my_coords_geo_btn.setStyleSheet("""
-            QPushButton {
-                color: #d32f2f;
-                font-size: 18px;
-                background-color: white;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 0px; /* Resetăm padding-ul pentru centrare automată */
-            }
-            QPushButton:hover {
-                background-color: #ffebee;
-                border-color: #d32f2f;
-            }
-        """)
+        self.my_coords_geo_btn = QPushButton("📍 Arată")
+        self.my_coords_geo_btn.setFixedSize(120, INPUT_H) 
         self.my_coords_geo_btn.clicked.connect(self.on_my_coords_geo_click)
-        my_position_frame.addWidget(self.my_coords_geo_btn)
-        my_position_frame.addStretch()
+        h_my.addWidget(self.my_coords_geo_btn)
         
-        search_controls_layout.addLayout(my_position_frame)
-        
+        l_my.addLayout(h_my)
         self.my_coords_address_label = QLabel("")
-        self.my_coords_address_label.setStyleSheet("color: #666; font-size: 10pt;")
-        search_controls_layout.addWidget(self.my_coords_address_label)
+        self.my_coords_address_label.setStyleSheet("color: #666; font-size: 9pt;")
+        l_my.addWidget(self.my_coords_address_label)
+        l1.addWidget(self.c_my)
         
-        # Controale pentru "Lângă locație salvată"
-        saved_location_frame = QHBoxLayout()
-        saved_location_frame.addWidget(QLabel("Locație salvată:"))
-        self.location_combo = QComboBox()
-        self.location_combo.setFixedWidth(200)
-        self.location_combo.currentTextChanged.connect(self.on_location_selected)
-        saved_location_frame.addWidget(self.location_combo)
-        saved_location_frame.addStretch()
+        # --- CONTAINER: EXPLORARE ---
+        self.c_exp = QWidget(); l_exp = QVBoxLayout(self.c_exp); l_exp.setContentsMargins(0,0,0,0)
+        h_exp = QHBoxLayout(); 
         
-        search_controls_layout.addLayout(saved_location_frame)
-        
-        # --- Butonul 2: Explorare zonă ---
-        explore_frame = QHBoxLayout()
-        explore_frame.addWidget(QLabel("Coordonate zonă:"))
         self.explore_coords_entry = QLineEdit()
-        self.explore_coords_entry.setFixedWidth(200)
-        explore_frame.addWidget(self.explore_coords_entry)
+        self.explore_coords_entry.setPlaceholderText("Click pe hartă")
+        self.explore_coords_entry.setFixedHeight(INPUT_H)
+        h_exp.addWidget(self.explore_coords_entry)
         
-        self.explore_geo_btn = QPushButton("📍")
-        self.explore_geo_btn.setFixedWidth(45) # Lățime mai mare (era 30/35)
-        self.explore_geo_btn.setStyleSheet("""
-            QPushButton {
-                color: #d32f2f;
-                font-size: 18px;
-                background-color: white;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 0px; /* Resetăm padding-ul pentru centrare automată */
-            }
-            QPushButton:hover {
-                background-color: #ffebee;
-                border-color: #d32f2f;
-            }
-        """)
+        self.explore_geo_btn = QPushButton("📍 Arată")
+        self.explore_geo_btn.setFixedSize(120, INPUT_H)
         self.explore_geo_btn.clicked.connect(self.on_explore_geo_click)
-        explore_frame.addWidget(self.explore_geo_btn)
-        explore_frame.addStretch()
+        h_exp.addWidget(self.explore_geo_btn)
         
-        search_controls_layout.addLayout(explore_frame)
-        
+        l_exp.addLayout(h_exp)
         self.explore_address_label = QLabel("")
-        self.explore_address_label.setStyleSheet("color: #666; font-size: 10pt;")
-        search_controls_layout.addWidget(self.explore_address_label)
+        self.explore_address_label.setStyleSheet("color: #666; font-size: 9pt;")
+        l_exp.addWidget(self.explore_address_label)
+        l1.addWidget(self.c_exp)
         
-        left_layout.addWidget(search_controls)
+        # --- CONTAINER: SALVAT ---
+        self.c_sav = QWidget(); l_sav = QVBoxLayout(self.c_sav); l_sav.setContentsMargins(0,0,0,0)
         
-        # Raza
-        radius_widget = QWidget()
-        radius_layout = QVBoxLayout(radius_widget)
-        radius_layout.setContentsMargins(10, 0, 0, 0)
+        # 1. Combo Box
+        self.location_combo = QComboBox()
+        self.location_combo.setFixedHeight(INPUT_H)
+        self.location_combo.currentTextChanged.connect(self.on_location_selected)
+        l_sav.addWidget(self.location_combo)
         
-        radius_layout.addWidget(QLabel("Rază (km):"))
-        self.radius_entry = QLineEdit()
-        self.radius_entry.setFixedWidth(60)
-        self.radius_entry.setText("1.5")
-        radius_layout.addWidget(self.radius_entry)
+        # 2. Coordonate + Buton
+        h_sav_coords = QHBoxLayout()
+        self.saved_coords_entry = QLineEdit()
+        self.saved_coords_entry.setPlaceholderText("Coordonate locație...")
+        self.saved_coords_entry.setFixedHeight(INPUT_H)
+        h_sav_coords.addWidget(self.saved_coords_entry)
         
-        self.use_my_position_for_distance = QCheckBox("Distanțe de la\npoziția mea")
-        self.use_my_position_for_distance.setStyleSheet("font-size: 9pt;")
-        radius_layout.addWidget(self.use_my_position_for_distance)
-        radius_layout.addStretch()
+        self.saved_geo_btn = QPushButton("📍 Arată")
+        self.saved_geo_btn.setFixedSize(120, INPUT_H)
+        # Cand apesi butonul, centrezi harta
+        self.saved_geo_btn.clicked.connect(lambda: self.update_address_and_center_map(self.saved_coords_entry, self.saved_address_label, "Locație Salvată", "saved"))
+        h_sav_coords.addWidget(self.saved_geo_btn)
         
-        left_layout.addWidget(radius_widget)
+        l_sav.addLayout(h_sav_coords)
         
-        # NOU: Controale pentru Hotspots
-        hotspot_widget = QWidget()
-        hotspot_layout = QVBoxLayout(hotspot_widget)
-        hotspot_layout.setContentsMargins(10, 0, 0, 0)
+        # 3. Adresă Label (CU STIL CORECT)
+        self.saved_address_label = QLabel("")
+        self.saved_address_label.setStyleSheet("color: #666; font-size: 9pt;")
+        self.saved_address_label.setWordWrap(True)
+        l_sav.addWidget(self.saved_address_label)
         
-        hotspot_layout.addWidget(QLabel("🔥 Zone Fierbinți:"))
+        l1.addWidget(self.c_sav)
         
-        # Limita minimă de recenzii
-        min_reviews_layout = QHBoxLayout()
-        min_reviews_layout.addWidget(QLabel("Min recenzii:"))
-        self.min_reviews_entry = QLineEdit()
-        self.min_reviews_entry.setFixedWidth(60)
-        self.min_reviews_entry.setText("500")
-        self.min_reviews_entry.setToolTip("Numărul minim de recenzii pentru a fi considerat hotspot")
-        min_reviews_layout.addWidget(self.min_reviews_entry)
-        hotspot_layout.addLayout(min_reviews_layout)
+        # --- RAZĂ ---
+        self.c_rad = QWidget(); l_rad = QHBoxLayout(self.c_rad); l_rad.setContentsMargins(0,5,0,0)
+        l_rad.addWidget(QLabel("Rază (km):"))
+        self.radius_entry = QLineEdit("1.5")
+        self.radius_entry.setFixedSize(50, INPUT_H)
+        self.radius_entry.setAlignment(Qt.AlignCenter)
+        l_rad.addWidget(self.radius_entry)
         
-        # Buton scanare hotspots
-        scan_hotspots_btn = QPushButton("🔥 Scanează")
-        scan_hotspots_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ff5722;
-                color: white;
-                padding: 6px 12px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 10pt;
-            }
-            QPushButton:hover {
-                background-color: #e64a19;
-            }
-        """)
-        scan_hotspots_btn.setToolTip("Scanează zona pentru locuri cu multe recenzii")
-        scan_hotspots_btn.clicked.connect(self.scan_hotspots)
-        hotspot_layout.addWidget(scan_hotspots_btn)
+        self.use_my_position_for_distance = QCheckBox("Dist. de la mine")
+        l_rad.addWidget(self.use_my_position_for_distance)
         
-        # Checkbox pentru afișare/ascundere hotspots
-        self.show_hotspots_checkbox = QCheckBox("Afișează pe hartă")
+        l_rad.addStretch() 
+        l1.addWidget(self.c_rad)
+        
+        l1.addStretch()
+        
+        # Buton Setare Explorare
+        self.btn_set_exp = QPushButton("⬇️ Setează Explorare Aici")
+        self.btn_set_exp.setFixedHeight(40)
+        self.btn_set_exp.setStyleSheet("background-color: #ff9800; color: white; font-weight: bold; font-size: 11pt; border-radius: 4px;")
+        self.btn_set_exp.clicked.connect(self.set_map_center_as_explore)
+        l1.addWidget(self.btn_set_exp)
+        
+        def update_vis():
+            self.c_my.setVisible(self.radio_my_position.isChecked())
+            self.c_exp.setVisible(self.radio_explore.isChecked())
+            self.btn_set_exp.setVisible(not self.radio_text.isChecked())
+            self.c_sav.setVisible(self.radio_saved_location.isChecked())
+            self.c_rad.setVisible(not self.radio_text.isChecked())
+        self.search_type_group.buttonClicked.connect(update_vis)
+        QTimer.singleShot(10, update_vis)
+        
+        top_layout.addWidget(g1)
+        
+        # GRUP 2
+        # --- GRUP 2: GENERATOR INTELIGENT (V26 - Inputuri Mai Mari) ---
+        # --- GRUP 2: GENERATOR INTELIGENT (V27 - Font Mare & Input Inalt) ---
+        # --- GRUP 2: GENERATOR INTELIGENT (V28 - Reorganizat Logic) ---
+        # --- GRUP 2: GENERATOR INTELIGENT (V29 - Texte Explicite) ---
+        # --- GRUP 2: GENERATOR INTELIGENT (V30 - Inputuri Late 60px) ---
+        g2 = QGroupBox("2. Generator Inteligent")
+        g2.setFixedWidth(460) 
+        l2 = QVBoxLayout(g2)
+        l2.setSpacing(8)
+        
+        # 1. Checkbox Afisare
+        self.show_hotspots_checkbox = QCheckBox("Arată zonele interesante pe hartă")
+        self.show_hotspots_checkbox.setStyleSheet("font-size: 10pt;")
         self.show_hotspots_checkbox.setChecked(True)
-        self.show_hotspots_checkbox.setStyleSheet("font-size: 9pt;")
         self.show_hotspots_checkbox.stateChanged.connect(self.toggle_hotspots_visibility)
-        hotspot_layout.addWidget(self.show_hotspots_checkbox)
+        l2.addWidget(self.show_hotspots_checkbox)
         
-        # --- NOU: Adăugare automată cu limită editabilă ---
-        auto_add_frame = QHBoxLayout()
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet("color: #ddd;")
+        l2.addWidget(line)
         
-        self.auto_add_hotspots_checkbox = QCheckBox("➕ Adaugă automat (>=4.0)")
-        self.auto_add_hotspots_checkbox.setToolTip("Adaugă automat locurile populare cu nota minimă 4.0")
-        self.auto_add_hotspots_checkbox.setStyleSheet("font-size: 9pt; color: #e65100; font-weight: bold;")
-        auto_add_frame.addWidget(self.auto_add_hotspots_checkbox)
+        STYLE_V_TITLE = "font-weight: bold; font-size: 11pt;"
+        INPUT_H = 30
         
-        auto_add_frame.addWidget(QLabel("Limită:"))
+        # 2. V1 TOP
+        h_v1 = QHBoxLayout()
+        self.auto_add_hotspots_checkbox = QCheckBox("[V1] Top")
+        self.auto_add_hotspots_checkbox.setStyleSheet(f"color: #1565c0; {STYLE_V_TITLE}")
+        h_v1.addWidget(self.auto_add_hotspots_checkbox)
+        
+        h_v1.addStretch()
+        
+        # Limita Maximă
+        h_v1.addWidget(QLabel("Limită Maximă:"))
         self.auto_add_limit_entry = QLineEdit("15")
-        self.auto_add_limit_entry.setFixedWidth(40)
-        self.auto_add_limit_entry.setToolTip("Numărul maxim de locuri de adăugat")
-        auto_add_frame.addWidget(self.auto_add_limit_entry)
+        self.auto_add_limit_entry.setFixedSize(35, INPUT_H)
+        self.auto_add_limit_entry.setAlignment(Qt.AlignCenter)
+        h_v1.addWidget(self.auto_add_limit_entry)
         
-        auto_add_frame.addStretch()
-        hotspot_layout.addLayout(auto_add_frame)
-
-        # --- NOU: Diversitate ---
-        diversity_frame = QHBoxLayout()
-        self.diversity_checkbox = QCheckBox("⚖️ Aplică Reguli Diversitate")
-        self.diversity_checkbox.setToolTip("Completează traseul conform regulilor definite în Setări > Diversitate")
-        self.diversity_checkbox.setStyleSheet("font-size: 9pt; color: #2e7d32; font-weight: bold;")
-        diversity_frame.addWidget(self.diversity_checkbox)
+        # Minim Reviews (LĂȚIT LA 60px)
+        h_v1.addWidget(QLabel("Nr. Minim Reviews:"))
+        self.min_reviews_entry = QLineEdit("500")
+        self.min_reviews_entry.setFixedSize(60, INPUT_H) 
+        self.min_reviews_entry.setAlignment(Qt.AlignCenter)
+        h_v1.addWidget(self.min_reviews_entry)
         
-        # Buton scurtătură către setări
-        div_settings_btn = QPushButton("⚙️ Config")
-        div_settings_btn.setFixedWidth(60)
-        div_settings_btn.setStyleSheet("font-size: 8pt; padding: 2px;")
-        div_settings_btn.clicked.connect(lambda: self.open_settings()) # Deschide dialogul setări
-        diversity_frame.addWidget(div_settings_btn)
-        diversity_frame.addStretch()
-        hotspot_layout.addLayout(diversity_frame)
+        l2.addLayout(h_v1)
         
-        hotspot_layout.addStretch()
+        # 3. V2 DIVERSITATE
+        h_v2 = QHBoxLayout()
+        self.diversity_checkbox = QCheckBox("[V2] Diversitate")
+        self.diversity_checkbox.setStyleSheet(f"color: #2e7d32; {STYLE_V_TITLE}")
+        h_v2.addWidget(self.diversity_checkbox)
         
-        left_layout.addWidget(hotspot_widget)
+        h_v2.addStretch()
         
-        controls_layout.addWidget(left_controls, 0, 0)
+        # Buton Setări
+        b_div = QPushButton("⚙️ Setări")
+        b_div.setFixedSize(120, 40) 
+        b_div.clicked.connect(lambda: self.open_settings())
+        h_v2.addWidget(b_div)
         
-        # Coloana dreapta
+        l2.addLayout(h_v2)
         
-        # Coloana dreapta
-        right_controls = QWidget()
-        right_layout = QVBoxLayout(right_controls)
-        right_layout.setContentsMargins(10, 0, 0, 0)
+        # 4. V3 POI GEO
+        h_v3 = QHBoxLayout()
+        self.geo_coverage_checkbox = QCheckBox("[V3] POI Geo")
+        self.geo_coverage_checkbox.setStyleSheet(f"color: #e65100; {STYLE_V_TITLE}")
+        h_v3.addWidget(self.geo_coverage_checkbox)
         
-        # Filtrare și Sortare
-        filters_group = QGroupBox("Filtrare și Sortare:")
-        filters_layout = QVBoxLayout(filters_group)
+        h_v3.addStretch()
         
-        # Sortare
-        sort_frame = QHBoxLayout()
-        sort_frame.addWidget(QLabel("Sortează după:"))
+        # Limita Maximă
+        h_v3.addWidget(QLabel("Limită Max.:"))
+        self.geo_limit_entry = QLineEdit("3")
+        self.geo_limit_entry.setFixedSize(35, INPUT_H)
+        self.geo_limit_entry.setAlignment(Qt.AlignCenter)
+        h_v3.addWidget(self.geo_limit_entry)
         
-        self.sort_group = QButtonGroup(self)
+        # Distanța Minimă (LĂȚIT LA 60px)
+        h_v3.addWidget(QLabel("Distanța Min. (m):"))
+        self.geo_dist_entry = QLineEdit("500")
+        self.geo_dist_entry.setFixedSize(60, INPUT_H)
+        self.geo_dist_entry.setAlignment(Qt.AlignCenter)
+        h_v3.addWidget(self.geo_dist_entry)
+        
+        l2.addLayout(h_v3)
+        
+        l2.addStretch()
+        
+        # 5. SCANARE
+        b_scan = QPushButton("🔥 Scanează și Generează")
+        b_scan.setFixedHeight(40)
+        b_scan.setStyleSheet("background-color: #ff5722; color: white; font-weight: bold; border-radius: 4px; font-size: 11pt;")
+        b_scan.clicked.connect(self.scan_hotspots)
+        l2.addWidget(b_scan)
+        
+        top_layout.addWidget(g2)
+        
+        # GRUP 3
+        # --- GRUP 3: ACȚIUNI MANUALE (Layout Nou V24 Fixed) ---
+        # --- GRUP 3: ACȚIUNI MANUALE (V25 - Stars & Big Buttons) ---
+        # --- GRUP 3: ACȚIUNI MANUALE (V31 - Lat 540px) ---
+        g3 = QGroupBox("3. Acțiuni Manuale")
+        g3.setFixedWidth(460) # Lățime mărită
+        l3 = QVBoxLayout(g3)
+        l3.setSpacing(10) 
+        
+        # 1. LABEL
+        self.prompt_label = QLabel("Introduceți un cuvânt cheie:")
+        l3.addWidget(self.prompt_label)
+        
+        # 2. CĂUTARE (Input + Buton)
+        h_src = QHBoxLayout()
+        self.prompt_entry = QTextEdit()
+        self.prompt_entry.setPlaceholderText("ex: farmacie...")
+        # Mărim inputul proporțional cu lățimea grupului
+        self.prompt_entry.setFixedSize(350, 38) 
+        self.prompt_entry.setStyleSheet("border: 1px solid #ccc; border-radius: 4px;")
+        h_src.addWidget(self.prompt_entry)
+        
+        b_src = QPushButton("🔍")
+        b_src.setFixedSize(80, 40) 
+        b_src.setStyleSheet("background-color: #4a90d9; color: white; font-size: 16px; border-radius: 4px;")
+        b_src.clicked.connect(self.send_request)
+        h_src.addWidget(b_src)
+        h_src.addStretch()
+        l3.addLayout(h_src)
+        
+        # 3. FILTRE (Sortare)
+        self.sort_group = QButtonGroup(self); h_sort = QHBoxLayout(); 
+        h_sort.addWidget(QLabel("Sort:"))
         
         self.radio_relevance = QRadioButton("Relevanță")
         self.radio_relevance.setChecked(True)
         self.sort_group.addButton(self.radio_relevance)
-        sort_frame.addWidget(self.radio_relevance)
+        h_sort.addWidget(self.radio_relevance)
         
         self.radio_rating = QRadioButton("Rating")
         self.sort_group.addButton(self.radio_rating)
-        sort_frame.addWidget(self.radio_rating)
+        h_sort.addWidget(self.radio_rating)
         
         self.radio_distance = QRadioButton("Distanță")
         self.sort_group.addButton(self.radio_distance)
-        sort_frame.addWidget(self.radio_distance)
+        h_sort.addWidget(self.radio_distance)
         
-        sort_frame.addStretch()
-        filters_layout.addLayout(sort_frame)
+        l3.addLayout(h_sort)
         
-        # Rating minim
-        rating_frame = QHBoxLayout()
-        rating_frame.addWidget(QLabel("Rating minim:"))
+        # 4. FILTRE (Rating)
+        self.rating_group = QButtonGroup(self); h_rate = QHBoxLayout(); 
+        h_rate.addWidget(QLabel("Min:"))
         
-        self.rating_group = QButtonGroup(self)
-        
-        self.radio_any = QRadioButton("Oricare")
+        self.radio_any = QRadioButton("Any")
         self.radio_any.setChecked(True)
         self.rating_group.addButton(self.radio_any)
-        rating_frame.addWidget(self.radio_any)
+        h_rate.addWidget(self.radio_any)
         
-        self.radio_3plus = QRadioButton("⭐3+")
+        self.radio_3plus = QRadioButton("⭐ 3+")
         self.rating_group.addButton(self.radio_3plus)
-        rating_frame.addWidget(self.radio_3plus)
+        h_rate.addWidget(self.radio_3plus)
         
-        self.radio_4plus = QRadioButton("⭐4+")
+        self.radio_4plus = QRadioButton("⭐ 4+")
         self.rating_group.addButton(self.radio_4plus)
-        rating_frame.addWidget(self.radio_4plus)
+        h_rate.addWidget(self.radio_4plus)
         
-        rating_frame.addStretch()
-        filters_layout.addLayout(rating_frame)
+        l3.addLayout(h_rate)
         
-        # Buton Settings
-        settings_btn = QPushButton("⚙️ Settings")
-        settings_btn.clicked.connect(self.open_settings)
-        filters_layout.addWidget(settings_btn, alignment=Qt.AlignRight)
+        # Obiect ascuns
+        self.route_total_label = QLineEdit(""); self.route_total_label.setVisible(False) 
+        l3.addWidget(self.route_total_label)
         
-        right_layout.addWidget(filters_group)
+        l3.addStretch() 
         
-        # Câmpul de căutare
-        search_input_frame = QWidget()
-        search_input_layout = QVBoxLayout(search_input_frame)
-        search_input_layout.setContentsMargins(0, 5, 0, 0)
+        # 5. BUTOANE MICI
+        h_small_btns = QHBoxLayout()
         
-        self.prompt_label = QLabel("Introduceți un cuvânt cheie (ex: cafenea, farmacie):")
-        search_input_layout.addWidget(self.prompt_label)
+        b_sav = QPushButton("💾")
+        b_sav.setFixedSize(80, 40)
+        b_sav.setToolTip("Salvează Traseu")
+        b_sav.clicked.connect(self.save_route_to_file)
+        h_small_btns.addWidget(b_sav)
         
-        search_row = QHBoxLayout()
+        b_lod = QPushButton("📂")
+        b_lod.setFixedSize(80, 40)
+        b_lod.setToolTip("Încarcă Traseu")
+        b_lod.clicked.connect(self.load_route_from_file)
+        h_small_btns.addWidget(b_lod)
         
-        self.prompt_entry = QTextEdit()
-        self.prompt_entry.setFixedHeight(50)
-        self.prompt_entry.setFixedWidth(280)
-        search_row.addWidget(self.prompt_entry)
+        b_ref = QPushButton("🔄")
+        b_ref.setFixedSize(80, 40)
+        b_ref.setToolTip("Reîmprospătează Info Traseu")
+        b_ref.clicked.connect(self.refresh_route_info)
+        h_small_btns.addWidget(b_ref)
         
-        send_button = QPushButton("Caută Locuri")
-        send_button.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        send_button.setStyleSheet("""
-            QPushButton {
-                background-color: #4a90d9;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 5px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3a7bc8;
-            }
-            QPushButton:pressed {
-                background-color: #2a6bb8;
-            }
-        """)
-        send_button.clicked.connect(self.send_request)
-        search_row.addWidget(send_button)
+        h_small_btns.addStretch()
+        l3.addLayout(h_small_btns)
         
-        route_btn = QPushButton("🗺️ Generează Traseu")
-        route_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        route_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ff9800;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 5px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #f57c00;
-            }
-            QPushButton:pressed {
-                background-color: #e65100;
-            }
-        """)
-        route_btn.clicked.connect(self.generate_optimized_route)
-        search_row.addWidget(route_btn)
+        # 6. BUTON MARE
+        b_gen = QPushButton("🗺️ Generează Traseu")
+        b_gen.setFixedHeight(45) 
+        b_gen.setStyleSheet("background-color: #ff5722; color: white; font-weight: bold; font-size: 12pt; border-radius: 5px;")
+        b_gen.clicked.connect(self.generate_optimized_route)
+        l3.addWidget(b_gen)
         
-        # Butoane pentru salvare/încărcare traseu
-        save_route_btn = QPushButton("💾")
-        save_route_btn.setToolTip("Salvează traseul în fișier")
-        save_route_btn.setFixedSize(40, 40)
-        save_route_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        save_route_btn.clicked.connect(self.save_route_to_file)
-        search_row.addWidget(save_route_btn)
-        
-        load_route_btn = QPushButton("📂")
-        load_route_btn.setToolTip("Încarcă traseu din fișier")
-        load_route_btn.setFixedSize(40, 40)
-        load_route_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-        """)
-        load_route_btn.clicked.connect(self.load_route_from_file)
-        search_row.addWidget(load_route_btn)
-        
-        search_row.addStretch()
-        search_input_layout.addLayout(search_row)
-        
-        # Label pentru afișarea totalului traseului
-        self.route_total_label = QLabel("")
-        self.route_total_label.setStyleSheet("""
-            QLabel {
-                color: #333;
-                font-size: 12pt;
-                font-weight: bold;
-                padding: 5px;
-                background-color: #fff3e0;
-                border-radius: 4px;
-            }
-        """)
-        self.route_total_label.setVisible(False)
-        search_input_layout.addWidget(self.route_total_label)
-        
-        right_layout.addWidget(search_input_frame)
-        
-        controls_layout.addWidget(right_controls, 0, 1)
-        
-        top_layout.addWidget(controls_frame)
-        main_layout.addWidget(top_panel)
-        
-        # Content frame cu hartă și rezultate
+        top_layout.addWidget(g3)
+        main_layout.addWidget(top_container)
         content_frame = QWidget()
         content_layout = QGridLayout(content_frame)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -2014,22 +1832,6 @@ class MainWindow(QMainWindow):
         
         map_header.addStretch()
         
-        set_explore_btn = QPushButton("⬇️ Setează la Explorare")
-        set_explore_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ff9800;
-                color: white;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #f57c00;
-            }
-        """)
-        set_explore_btn.clicked.connect(self.set_map_center_as_explore)
-        map_header.addWidget(set_explore_btn)
         
         map_layout.addLayout(map_header)
         
@@ -2039,12 +1841,10 @@ class MainWindow(QMainWindow):
         self.zoom_in_button = QPushButton("Zoom In (+)")
         self.zoom_in_button.setEnabled(False)
         self.zoom_in_button.clicked.connect(self.zoom_in)
-        zoom_controls.addWidget(self.zoom_in_button)
         
         self.zoom_out_button = QPushButton("Zoom Out (-)")
         self.zoom_out_button.setEnabled(False)
         self.zoom_out_button.clicked.connect(self.zoom_out)
-        zoom_controls.addWidget(self.zoom_out_button)
         
         zoom_controls.addStretch()
         map_layout.addLayout(zoom_controls)
@@ -2159,6 +1959,8 @@ class MainWindow(QMainWindow):
         results_tab_layout.addWidget(scroll_area)
         
         self.results_tabs.addTab(results_tab, "📋 Rezultate")
+        # [V46] Conectăm click-ul pe tab pentru a restaura lista
+        self.results_tabs.tabBarClicked.connect(self.on_results_tab_clicked)
         
         # Tab 2: Traseu
         route_tab = QWidget()
@@ -2223,7 +2025,7 @@ class MainWindow(QMainWindow):
                 font-size: 11pt;
                 padding: 8px 16px;
                 background-color: #fff3e0;
-                color: #e65100;
+                color: #2e7d32;
                 border: 1px solid #ffcc80;
                 border-radius: 4px;
             }
@@ -2264,6 +2066,10 @@ class MainWindow(QMainWindow):
         route_tab_layout.addLayout(route_buttons_layout)
         
         self.results_tabs.addTab(route_tab, "🗺️ Traseu (0)")
+        self.results_tabs.addTab(QWidget(), "") # Index 2
+        self.results_tabs.setTabEnabled(2, False)
+        self.results_tabs.setStyleSheet(self.results_tabs.styleSheet() + " QTabBar::tab:disabled { color: #2e7d32; background: transparent; border: none; font-weight: bold; font-size: 11pt; margin-left: 10px; }")
+        self.route_total_label.textChanged.connect(lambda t: self.results_tabs.setTabText(2, t))
         
         results_layout.addWidget(self.results_tabs)
         
@@ -2432,8 +2238,18 @@ class MainWindow(QMainWindow):
         global saved_locations
         if text and text in saved_locations:
             coords = saved_locations[text]
+            
+            # 1. Punem coordonatele în câmp
+            if hasattr(self, 'saved_coords_entry'):
+                self.saved_coords_entry.setText(coords)
+                
+                # 2. [V33] Căutăm și afișăm automat adresa (fără să mutăm harta încă)
+                if hasattr(self, 'saved_address_label'):
+                    # Folosim funcția existentă care face reverse geocoding
+                    self.update_address_from_coords(self.saved_coords_entry, self.saved_address_label)
+            
             log_info(f"Locația '{text}' selectată: {coords}")
-    
+
     def refresh_location_combo(self):
         global saved_locations
         self.location_combo.clear()
@@ -2730,12 +2546,24 @@ class MainWindow(QMainWindow):
         
         if distance_info and place_id in distance_info:
             dist_data = distance_info[place_id]
-            dist_label = QLabel(f"  🚗 {dist_data['distance_text']} • {dist_data['driving_duration']}")
+            
+            # [V47 Fix] Extragere sigură a datelor (evită KeyError)
+            # 1. Încercăm formatul standard (Search)
+            d_text = dist_data.get('distance_text', 'N/A')
+            d_dur = dist_data.get('driving_duration', 'N/A')
+            
+            # 2. Dacă e format tip POI (nested), suprascriem
+            if 'driving' in dist_data:
+                d_text = dist_data['driving'].get('distance', d_text)
+                d_dur = dist_data['driving'].get('duration', d_dur)
+
+            dist_label = QLabel(f"  🚗 {d_text} • {d_dur}")
             dist_label.setStyleSheet("color: #1976d2; font-size: 15pt; font-weight: bold; border: none;")
             status_layout.addWidget(dist_label)
             
-            if dist_data['walking_duration']:
-                walk_label = QLabel(f"  🚶 {dist_data['walking_duration']}")
+            w_dur = dist_data.get('walking_duration')
+            if w_dur:
+                walk_label = QLabel(f"  🚶 {w_dur}")
                 walk_label.setStyleSheet("color: #388e3c; font-size: 15pt; font-weight: bold; border: none;")
                 status_layout.addWidget(walk_label)
         
@@ -2744,52 +2572,43 @@ class MainWindow(QMainWindow):
         
         self.results_layout.addWidget(card)
     
-    def toggle_selection(self, place_id, name, rating, reviews_count, is_open_status, state, place_types=None):
+    def toggle_selection(self, place_id, name, rating, reviews_count, is_open_status, state, place_types=None, website=None):
         global selected_places
         if state == Qt.Checked.value:
-            # Salvăm un dict cu toate informațiile
             selected_places[place_id] = {
                 'name': name,
                 'rating': rating,
                 'reviews_count': reviews_count,
                 'is_open_status': is_open_status,
-                'types': place_types or []
+                'types': place_types or [],
+                'website': website 
             }
             log_info(f"Adăugat la traseu: {name}")
-            # Adăugăm în lista de traseu cu toate datele
-            self.add_to_route_list(place_id, name, "", None, rating, reviews_count, is_open_status, place_types)
+            self.add_to_route_list(place_id, name, "", None, rating, reviews_count, is_open_status, place_types, None, website)
         else:
             if place_id in selected_places:
                 del selected_places[place_id]
                 log_info(f"Eliminat din traseu: {name}")
-                # Eliminăm din lista de traseu
                 self.remove_from_route_list(place_id)
         
-        # Actualizăm titlul tab-ului
         self.update_route_tab_title()
-    
-    def add_to_route_list(self, place_id, name, address="", initial_color=None, rating='N/A', reviews_count=0, is_open_status='Program necunoscut', place_types=None):
-        """Adaugă o locație în lista de traseu cu widget personalizat."""
+
+    def add_to_route_list(self, place_id, name, address="", initial_color=None, rating='N/A', reviews_count=0, is_open_status='Program necunoscut', place_types=None, route_info=None, website=None):
         index = self.route_list.count() + 1
-        
         item = QListWidgetItem()
         item.setData(Qt.UserRole, place_id)
         
-        # Creăm widget-ul cu toate informațiile (inclusiv types)
-        item_widget = RouteItemWidget(place_id, name, address, self, index, initial_color, rating, reviews_count, is_open_status, place_types)
+        item_widget = RouteItemWidget(place_id, name, address, self, index, initial_color, rating, reviews_count, is_open_status, place_types, route_info, website)
         item_widget.lockChanged.connect(self.on_lock_changed)
         
         item.setSizeHint(item_widget.sizeHint())
-        
         self.route_list.addItem(item)
         self.route_list.setItemWidget(item, item_widget)
         
         self.update_lock_states()
         self.save_route_order()
-        
-        # Reaplicăm filtrul curent pentru ca noul element să respecte regula
         self.apply_route_filter()
-    
+
     def on_route_items_moved(self):
         """Se apelează după drag & drop. Reconstruiește lista pentru a repara widget-urile distruse."""
         # 1. Salvăm NOUA ordine (după drag & drop) și stările
@@ -2943,55 +2762,46 @@ class MainWindow(QMainWindow):
                 widget.update_index(i + 1)
     
     def reorder_route_list(self, new_order):
-        """Reordonează lista de traseu conform ordinii optimizate, păstrând culorile."""
         global selected_places
         
-        # 1. Salvăm culorile și stările de blocare
         saved_colors = {}
         saved_locks = {}
         
         for i in range(self.route_list.count()):
             item = self.route_list.item(i)
-            place_id = item.data(Qt.UserRole)
-            widget = self.route_list.itemWidget(item)
-            if widget:
-                saved_colors[place_id] = getattr(widget, 'initial_color', None)
-                saved_locks[place_id] = widget.is_locked()
+            pid = item.data(Qt.UserRole)
+            w = self.route_list.itemWidget(item)
+            if w:
+                saved_colors[pid] = getattr(w, 'initial_color', None)
+                saved_locks[pid] = w.is_locked()
         
-        # 2. Golim lista
         self.route_list.clear()
         
-        # 3. Reconstruim în noua ordine
         for place_id in new_order:
             if place_id in selected_places:
-                data = selected_places[place_id]
+                d = selected_places[place_id]
                 
-                if isinstance(data, dict):
-                    name = data.get('name', "Unknown")
-                    address = data.get('address', "")
-                else:
-                    name = str(data)
-                    address = ""
+                name = d.get('name', "Unknown")
+                addr = d.get('address', "")
+                rt = d.get('rating', 'N/A')
+                rc = d.get('reviews_count', 0)
+                st = d.get('is_open_status', 'Program necunoscut')
+                pt = d.get('types', [])
+                r_info = d.get('route_info', None)
+                web = d.get('website', None)
                 
-                # Adăugăm cu culoarea originală
-                original_color = saved_colors.get(place_id)
-                self.add_to_route_list(place_id, name, address, original_color)
+                col = saved_colors.get(place_id)
+                self.add_to_route_list(place_id, name, addr, col, rt, rc, st, pt, r_info, web)
                 
-                # Restaurăm starea de blocare
                 last_row = self.route_list.count() - 1
                 item = self.route_list.item(last_row)
-                widget = self.route_list.itemWidget(item)
-                if widget:
-                    widget.set_locked(saved_locks.get(place_id, False))
+                w = self.route_list.itemWidget(item)
+                if w: w.set_locked(saved_locks.get(place_id, False))
         
-        # 4. Actualizăm stările
         self.update_lock_states()
         self.save_route_order()
-        
-        # Reaplicăm filtrul curent pentru ca noul element să respecte regula
         self.apply_route_filter()
-        log_info(f"Lista reordonată conform traseului optimizat: {len(new_order)} elemente")
-    
+
     def apply_route_filter(self):
         """Filtrează vizual lista de traseu în funcție de selecția din ComboBox."""
         filter_idx = self.route_filter_combo.currentIndex()
@@ -3034,14 +2844,18 @@ class MainWindow(QMainWindow):
         self.update_route_tab_title()
         self.save_route_order()
         self.route_total_label.setVisible(False)
+        # [V21 Fix] Curățare corectă (JS încapsulat în string Python)
         log_info("Traseul a fost golit.")
     
+        # [V22 Fix] Brute-Force Cleanup (Sterge orice linie existenta)
+        js_nuke = ("var targets = ['routePolyline', 'line', 'currentPolyline', 'poly']; ""targets.forEach(function(t){ if(window[t]) { window[t].setMap(null); window[t] = null; } }); ""if(window.routeMarkers) { ""  for(var i=0; i<window.routeMarkers.length; i++) { if(window.routeMarkers[i]) window.routeMarkers[i].setMap(null); } ""  window.routeMarkers = []; ""}")
+        self.web_view.page().runJavaScript(js_nuke)
+        log_info("Harta a fost curățată forțat (V22).")
+
     def refresh_route_info(self, silent_mode=False):
-        """Actualizează informațiile (rating, recenzii, status) pentru toate locațiile din traseu."""
+        """Actualizează informațiile, PĂSTRÂND etichetele [V1]/[V2] dacă există."""
         global selected_places
         
-        # Dacă funcția e apelată de buton (Qt signal), silent_mode poate fi bool-ul 'checked' (False).
-        # Ne asigurăm că e True doar dacă specificăm noi explicit.
         is_silent = silent_mode is True
         
         if self.route_list.count() == 0:
@@ -3049,137 +2863,104 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Info", "Nu există locații în traseu.")
             return
         
-        # Confirmăm actualizarea DOAR dacă nu suntem în mod silențios
         if not is_silent:
             reply = QMessageBox.question(
-                self, 
-                "Actualizare Info", 
-                f"Vrei să actualizezi informațiile pentru toate cele {self.route_list.count()} locații din traseu?\n\n"
-                "Acest lucru poate dura câteva secunde.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                self, "Actualizare Info", 
+                f"Actualizez {self.route_list.count()} locații?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
             )
-            
-            if reply != QMessageBox.Yes:
-                return
+            if reply != QMessageBox.Yes: return
         
         try:
-            log_info("Se actualizează informațiile pentru traseu...")
+            log_info("Se actualizează informațiile (păstrând prefixele)...")
             
-            # Colectăm toate place_id-urile și culorile
             route_order = []
             saved_colors = {}
             saved_locks = {}
             
+            # Salvăm starea curentă
             for i in range(self.route_list.count()):
                 item = self.route_list.item(i)
-                place_id = item.data(Qt.UserRole)
-                route_order.append(place_id)
-                
+                pid = item.data(Qt.UserRole)
+                route_order.append(pid)
                 widget = self.route_list.itemWidget(item)
                 if widget:
-                    if hasattr(widget, 'initial_color'):
-                        saved_colors[place_id] = widget.initial_color
-                    saved_locks[place_id] = widget.is_locked()
+                    if hasattr(widget, 'initial_color'): saved_colors[pid] = widget.initial_color
+                    saved_locks[pid] = widget.is_locked()
             
-            # Actualizăm informațiile pentru fiecare locație
             updated_count = 0
             for place_id in route_order:
                 try:
-                    # Obținem detaliile de la Google Places API
-                    # Eliminăm filtrul 'fields' pentru a evita erorile de validare ale librăriei ('types' vs 'type')
-                    # Astfel primim tot obiectul, inclusiv categoriile și recenziile.
-                    details = gmaps_client.place(
-                        place_id=place_id, 
-                        language='ro'
-                    )
-                    
+                    details = gmaps_client.place(place_id=place_id, language='ro')
                     result = details.get('result', {})
-                    name = result.get('name', selected_places.get(place_id, {}).get('name', 'Unknown'))
+                    
+                    # --- LOGICA DE PĂSTRARE PREFIX ---
+                    old_data = selected_places.get(place_id, {})
+                    old_name = old_data.get('name', 'Unknown') if isinstance(old_data, dict) else str(old_data)
+                    
+                    new_google_name = result.get('name', old_name)
+                    
+                    # Detectăm prefixul [V1], [V2], [V3]
+                    prefix = ""
+                    if old_name.startswith("[V"):
+                        # Luăm primele 5 caractere (ex: "[V1] ")
+                        prefix = old_name[:5]
+                    
+                    # Reconstruim numele final
+                    final_name = f"{prefix}{new_google_name}" if prefix and not new_google_name.startswith("[V") else new_google_name
+                    
                     rating = result.get('rating', 'N/A')
                     reviews_count = result.get('user_ratings_total', 0)
                     
-                    opening_hours = result.get('opening_hours', {})
-                    if 'open_now' in opening_hours:
-                        is_open_status = "Deschis acum" if opening_hours.get('open_now') else "Închis acum"
-                    else:
-                        is_open_status = "Program necunoscut"
+                    oh = result.get('opening_hours', {})
+                    is_open = "Deschis acum" if oh.get('open_now') else "Închis acum" if 'open_now' in oh else "Prog. necunoscut"
                     
-                    # Actualizăm dicționarul selected_places
+                    # Update dict
                     if place_id in selected_places:
                         if isinstance(selected_places[place_id], dict):
-                            selected_places[place_id]['name'] = name
+                            selected_places[place_id]['name'] = final_name # Numele cu prefix
                             selected_places[place_id]['rating'] = rating
                             selected_places[place_id]['reviews_count'] = reviews_count
-                            selected_places[place_id]['is_open_status'] = is_open_status
+                            selected_places[place_id]['is_open_status'] = is_open
                             selected_places[place_id]['types'] = result.get('types', [])
-                        else:
-                            # Convertim datele vechi în format nou
-                            selected_places[place_id] = {
-                                'name': name,
-                                'rating': rating,
-                                'reviews_count': reviews_count,
-                                'is_open_status': is_open_status,
-                                'types': result.get('types', [])
-                            }
                     
                     updated_count += 1
-                    log_debug(f"Actualizat: {name} - ⭐{rating} 📝{reviews_count} 🕒{is_open_status}")
                     
                 except Exception as e:
-                    log_error(f"Eroare la actualizarea {place_id}: {e}")
+                    log_error(f"Err update {place_id}: {e}")
                     continue
             
-            # Reconstruim lista vizuală cu datele actualizate
+            # Reconstruim lista
             self.route_list.clear()
-            
             for place_id in route_order:
                 if place_id in selected_places:
-                    data = selected_places[place_id]
+                    d = selected_places[place_id]
+                    nm = d.get('name', '?')
+                    rt = d.get('rating', 'N/A')
+                    rv = d.get('reviews_count', 0)
+                    st = d.get('is_open_status', '?')
+                    tp = d.get('types', [])
                     
-                    if isinstance(data, dict):
-                        name = data.get('name', 'Unknown')
-                        rating = data.get('rating', 'N/A')
-                        reviews_count = data.get('reviews_count', 0)
-                        is_open_status = data.get('is_open_status', 'Program necunoscut')
-                        place_types = data.get('types', [])
-                    else:
-                        name = str(data)
-                        rating = 'N/A'
-                        reviews_count = 0
-                        is_open_status = 'Program necunoscut'
-                        place_types = []
-                    
-                    original_color = saved_colors.get(place_id)
-                    self.add_to_route_list(place_id, name, "", original_color, rating, reviews_count, is_open_status, place_types)
+                    col = saved_colors.get(place_id)
+                    self.add_to_route_list(place_id, nm, "", col, rt, rv, st, tp)
             
-            # Restaurăm stările de blocare
+            # Restaurăm lock
             for i in range(self.route_list.count()):
                 item = self.route_list.item(i)
-                place_id = item.data(Qt.UserRole)
-                widget = self.route_list.itemWidget(item)
-                
-                if widget and place_id in saved_locks:
-                    if saved_locks[place_id]:
-                        widget.set_locked(True)
+                pid = item.data(Qt.UserRole)
+                w = self.route_list.itemWidget(item)
+                if w and pid in saved_locks and saved_locks[pid]:
+                    w.set_locked(True)
             
             self.renumber_route_items()
             self.update_lock_states()
             self.save_route_order()
+            self.apply_route_filter()
             
-            log_success(f"Informații actualizate pentru {updated_count} locații!")
-            if not is_silent:
-                QMessageBox.information(
-                    self, 
-                    "✅ Actualizare Completă", 
-                    f"Informațiile au fost actualizate pentru {updated_count} din {len(route_order)} locații!"
-                )
+            log_success(f"Info actualizat pentru {updated_count} locații. Prefixele păstrate.")
             
         except Exception as e:
-            log_error(f"Eroare la actualizarea traseului: {e}")
-            traceback.print_exc()
-            QMessageBox.critical(self, "Eroare", f"Eroare la actualizare: {e}")
-    
+            log_error(f"Err refresh: {e}")
     def save_route_to_file(self):
         """Salvează traseul curent într-un fișier JSON."""
         global selected_places, route_places_coords
@@ -3381,8 +3162,8 @@ class MainWindow(QMainWindow):
             log_error(f"Eroare la obținerea website-ului: {e}")
     
     def generate_ai_summary_from_card(self, place_id, place_name, button):
+        # [V39] Doar dezactivăm butonul, NU îi schimbăm textul/iconița
         button.setEnabled(False)
-        button.setText("⏳...")
         QApplication.processEvents()
         
         try:
@@ -3390,7 +3171,7 @@ class MainWindow(QMainWindow):
             reviews = details.get('result', {}).get('reviews', [])
             
             if not reviews:
-                QMessageBox.information(self, f"✨ Rezumat AI - {place_name}", 
+                QMessageBox.information(self, f"Rezumat AI - {place_name}", 
                                        "Nu există recenzii de analizat pentru acest loc.")
             else:
                 summary = get_ai_summary(reviews, place_name)
@@ -3411,343 +3192,149 @@ class MainWindow(QMainWindow):
             log_error(f"Eroare la generarea rezumatului: {e}")
             QMessageBox.critical(self, "Eroare", f"Eroare: {e}")
         
+        # Reactivăm butonul la final, intact
         button.setEnabled(True)
-        button.setText("🗣️ Opinii")
-    
+
     def show_history_window(self, place_name, place_address, button):
+        # [V39] Doar dezactivăm butonul, NU îi schimbăm textul/iconița
         button.setEnabled(False)
-        button.setText("⏳...")
         QApplication.processEvents()
         
-        info = get_history_info(place_name, place_address)
-        
-        dialog = HistoryDialog(place_name, info, self)
-        dialog.exec()
+        try:
+            info = get_history_info(place_name, place_address)
+            dialog = HistoryDialog(place_name, info, self)
+            dialog.exec()
+        except Exception as e:
+            log_error(f"Eroare istoric: {e}")
         
         button.setEnabled(True)
-        button.setText("📖 Info")
-    
+
     def generate_optimized_route(self):
-        global selected_places, current_map_lat, current_map_lng, route_places_coords
+        global selected_places, route_places_coords
         
-        def get_waypoint_format(pid):
-            """Convertește un place_id în format acceptat de Directions API.
-            Pentru waypoints custom (care încep cu 'waypoint_') folosește coordonate.
-            Pentru place_id-uri Google normale folosește place_id:xyz.
-            """
-            if pid.startswith('waypoint_'):
-                # E un waypoint custom - folosim coordonatele
-                if pid in route_places_coords:
-                    coords = route_places_coords[pid]
-                    return f"{coords['lat']},{coords['lng']}"
-                else:
-                    log_error(f"Nu am coordonate pentru waypoint: {pid}")
-                    return None
-            else:
-                # E un place_id Google normal
-                return f"place_id:{pid}"
-        
-        # Obținem ordinea din lista de traseu
         route_order = self.get_route_order()
-        
         if len(route_order) < 2:
-            QMessageBox.critical(self, "Eroare", "Selectează cel puțin 2 locuri pentru un traseu!")
+            QMessageBox.critical(self, "Eroare", "Selectează cel puțin 2 locuri!")
             return
-        
-        # Obținem numărul de puncte blocate
-        locked_count = self.get_locked_count()
-        
-        # Prima locație din listă este punctul de plecare
-        first_place_id = route_order[0]
-        
-        # Extragem numele corect din dicționar
-        first_data = selected_places.get(first_place_id, {})
-        if isinstance(first_data, dict):
-            first_place_name = first_data.get('name', "Start")
-        else:
-            first_place_name = str(first_data)
             
-        source_name = first_place_name
+        for pid in selected_places:
+            if 'route_info' in selected_places[pid]:
+                del selected_places[pid]['route_info']
         
-        # Căutăm coordonatele primei locații
+        locked_count = self.get_locked_count()
+        start_id = route_order[0]
         start_coords = None
-        if first_place_id in route_places_coords:
-            coords = route_places_coords[first_place_id]
-            start_coords = (coords['lat'], coords['lng'])
-        else:
-            for place in current_search_results:
-                if place.get('place_id') == first_place_id:
-                    loc = place.get('geometry', {}).get('location', {})
-                    start_coords = (loc.get('lat'), loc.get('lng'))
-                    break
+        if start_id in route_places_coords:
+            start_coords = (route_places_coords[start_id]['lat'], route_places_coords[start_id]['lng'])
         
         if not start_coords:
-            # Fallback - doar pentru place_id-uri Google reale
-            if not first_place_id.startswith('waypoint_'):
-                try:
-                    details = gmaps_client.place(place_id=first_place_id, fields=['geometry'], language='ro')
-                    loc = details.get('result', {}).get('geometry', {}).get('location', {})
-                    start_coords = (loc.get('lat'), loc.get('lng'))
-                except Exception as e:
-                    log_error(f"Nu s-au putut obține coordonatele pentru punctul de start: {e}")
-                    QMessageBox.critical(self, "Eroare", "Nu s-au putut obține coordonatele pentru punctul de start!")
-                    return
-            else:
-                log_error(f"Waypoint custom fără coordonate: {first_place_id}")
-                QMessageBox.critical(self, "Eroare", "Nu s-au putut obține coordonatele pentru punctul de start!")
+             try:
+                d = gmaps_client.place(place_id=start_id, fields=['geometry'])
+                l = d['result']['geometry']['location']
+                start_coords = (l['lat'], l['lng'])
+             except:
+                QMessageBox.critical(self, "Eroare", "Nu găsesc startul!")
                 return
+
+        start_str = f"{start_coords[0]},{start_coords[1]}"
         
-        if not start_coords or not start_coords[0] or not start_coords[1]:
-            QMessageBox.critical(self, "Eroare", "Coordonatele punctului de start nu sunt valide!")
-            return
-        
-        start_point = f"{start_coords[0]},{start_coords[1]}"
-        
-        # Separăm punctele blocate de cele neblocate
-        locked_ids = route_order[:locked_count] if locked_count > 0 else []
-        unlocked_ids = route_order[locked_count:]
-        
-        log_info(f"Puncte blocate: {locked_count}, Puncte de optimizat: {len(unlocked_ids)}")
+        ids_to_optimize = route_order[1:]
+        waypoints = []
+        for pid in ids_to_optimize:
+            if pid in route_places_coords:
+                c = route_places_coords[pid]
+                waypoints.append(f"{c['lat']},{c['lng']}")
+            elif not pid.startswith('waypoint_'):
+                waypoints.append(f"place_id:{pid}")
         
         try:
-            final_order = []
-            optimize = False
+            log_info("Se calculează traseul PIETONAL...")
             
-            if len(unlocked_ids) == 0:
-                final_order = route_order
-                optimize = False
-            elif locked_count == 0:
-                final_order = route_order
-                optimize = True
-            else:
-                # Logica hibridă (blocat + optimizat)
-                last_locked_id = locked_ids[-1]
-                last_locked_coords = None
-                
-                if last_locked_id in route_places_coords:
-                    coords = route_places_coords[last_locked_id]
-                    last_locked_coords = f"{coords['lat']},{coords['lng']}"
-                else:
-                    # Fallback - doar pentru place_id-uri Google reale
-                    if not last_locked_id.startswith('waypoint_'):
-                        try:
-                            details = gmaps_client.place(place_id=last_locked_id, fields=['geometry'], language='ro')
-                            loc = details.get('result', {}).get('geometry', {}).get('location', {})
-                            last_locked_coords = f"{loc['lat']},{loc['lng']}"
-                        except:
-                            last_locked_coords = start_point
-                    else:
-                        last_locked_coords = start_point
-                
-                if len(unlocked_ids) > 1:
-                    unlocked_waypoints = []
-                    for pid in unlocked_ids:
-                        wp_format = get_waypoint_format(pid)
-                        if wp_format:
-                            unlocked_waypoints.append(wp_format)
-                    
-                    if len(unlocked_waypoints) != len(unlocked_ids):
-                        log_error("Nu s-au putut converti toate waypoints pentru optimizare")
-                        # Continuăm fără optimizare
-                        final_order = route_order
-                    elif not unlocked_waypoints:
-                        log_error("Nu s-au putut converti waypoints pentru optimizare")
-                        final_order = route_order
-                    else:
-                        opt_result = gmaps_client.directions(
-                            origin=last_locked_coords,
-                            destination=start_point,
-                            waypoints=unlocked_waypoints,
-                            optimize_waypoints=True,
-                            mode="walking",
-                            language='ro'
-                        )
-                        
-                        if opt_result and 'waypoint_order' in opt_result[0]:
-                            waypoint_order = opt_result[0]['waypoint_order']
-                            optimized_unlocked = [unlocked_ids[i] for i in waypoint_order]
-                            final_order = locked_ids + optimized_unlocked
-                            log_info(f"Ordine optimizată pentru punctele neblocate: {waypoint_order}")
-                        else:
-                            final_order = route_order
-                else:
-                    final_order = route_order
-                
-                optimize = False
+            do_optimize = (locked_count <= 1)
             
-            # Construim waypoints pentru traseu final
-            waypoints_ids = []
-            for pid in final_order[1:]:
-                wp_format = get_waypoint_format(pid)
-                if wp_format:
-                    waypoints_ids.append(wp_format)
-            
-            if len(waypoints_ids) != len(final_order) - 1:
-                log_error("Nu s-au putut converti toate waypoints pentru traseul final")
-                missing_count = len(final_order) - 1 - len(waypoints_ids)
-                QMessageBox.critical(
-                    self, 
-                    "Eroare", 
-                    f"Nu s-au putut obține coordonatele pentru {missing_count} puncte din traseu.\n\n"
-                    "Acest lucru se poate întâmpla dacă aplicația a fost repornită și coordonatele nu au fost salvate.\n\n"
-                    "Soluție: Elimină punctele problematice și adaugă-le din nou."
-                )
-                return
-            
-            log_info(f"Se calculează traseul final. START: {source_name} -> {len(waypoints_ids)} waypoints...")
-            
-            # Apelăm Directions API pentru traseul final
-            directions_result = gmaps_client.directions(
-                origin=start_point, 
-                destination=start_point,
-                waypoints=waypoints_ids, 
-                optimize_waypoints=optimize,
-                mode="walking", 
-                language='ro'
+            res = gmaps_client.directions(
+                origin=start_str, destination=start_str,
+                waypoints=waypoints, optimize_waypoints=do_optimize,
+                mode="walking", language='ro'
             )
             
-            if directions_result:
-                route = directions_result[0]
-                overview_polyline = route['overview_polyline']['points']
+            if res:
+                route = res[0]
+                final_order = [route_order[0]]
+                if do_optimize and 'waypoint_order' in route:
+                    for idx in route['waypoint_order']:
+                        final_order.append(ids_to_optimize[idx])
+                else:
+                    final_order.extend(ids_to_optimize)
                 
-                # Dacă am optimizat tot, actualizăm final_order
-                if optimize and 'waypoint_order' in route:
-                    waypoint_order = route['waypoint_order']
-                    final_order = [final_order[0]] + [final_order[i+1] for i in waypoint_order]
-
-                # =================================================================================
-                # --- MODIFICARE MAJORĂ: REORDONĂM LISTA ACUM (ÎNAINTE SĂ SCRIEM DETALIILE) ---
-                # =================================================================================
-                self.reorder_route_list(final_order)
+                total_km = 0; total_min = 0
                 
-                # Acum lista este curată și în ordinea corectă. Putem scrie pe ea.
+                if start_id in selected_places:
+                    selected_places[start_id]['route_info'] = "Punct de Plecare"
                 
-                # Marcam startul in UI
-                start_item = self.route_list.item(0)
-                if start_item:
-                    start_widget = self.route_list.itemWidget(start_item)
-                    if start_widget:
-                        start_widget.set_details("🏠 Punct de Plecare")
-
-                # Construim rezumatul text ȘI actualizăm widget-urile
-                summary_text = f"🏁 Traseu Calculat:\n\n"
-                if locked_count > 0:
-                    summary_text += f"🔒 Puncte fixate: {locked_count}\n\n"
-                
-                summary_text += f"1. 🏠 START: {source_name}\n"
-                
-                total_km = 0
-                total_min = 0
-                
-                for i, place_id in enumerate(final_order[1:]):
-                    leg = route['legs'][i]
-                    
-                    # Nume corect
-                    p_data = selected_places.get(place_id, {})
-                    place_name = p_data.get('name', f"Punct {i+2}") if isinstance(p_data, dict) else str(p_data)
-                    
-                    dist_text = leg['distance']['text']
-                    dur_text = leg['duration']['text']
-                    
-                    lock_icon = "🔒 " if i + 1 < locked_count else ""
-                    summary_text += f"{i+2}. {lock_icon}📍 {place_name} ({dist_text}, {dur_text})\n"
-                    
+                legs = route['legs']
+                for i, leg in enumerate(legs):
+                    dist = leg['distance']['text']
+                    dur = leg['duration']['text']
                     total_km += leg['distance']['value']
                     total_min += leg['duration']['value']
                     
-                    # --- UPDATE WIDGET PE LISTA DEJA REORDONATĂ ---
-                    # Deoarece am apelat deja reorder_route_list, elementul de la indexul i+1
-                    # corespunde exact cu place_id curent! Nu mai trebuie să căutăm.
-                    list_index = i + 1
-                    if list_index < self.route_list.count():
-                        item = self.route_list.item(list_index)
-                        w = self.route_list.itemWidget(item)
-                        if w and w.place_id == place_id:
-                            w.set_details(f"🚗 {dist_text} • 🕒 {dur_text} (de la punctul anterior)")
+                    if i < len(final_order) - 1:
+                        dest_id = final_order[i+1]
+                        if dest_id in selected_places:
+                            selected_places[dest_id]['route_info'] = f"{dist}, {dur}"
+                            
+                # [V37] UPDATE: ORAR + WEBSITE
+                log_info("Actualizare detalii (Orar + Website)...")
+                for pid in final_order:
+                    try:
+                        need_update = False
+                        curr_stat = selected_places.get(pid, {}).get('is_open_status', 'N/A')
+                        curr_web = selected_places.get(pid, {}).get('website', None)
+                        
+                        if curr_stat == 'N/A' or curr_stat == 'Program necunoscut' or curr_web is None:
+                            if not pid.startswith('waypoint_'):
+                                d = gmaps_client.place(place_id=pid, fields=['opening_hours', 'website'], language='ro')
+                                res_det = d.get('result', {})
+                                
+                                oh = res_det.get('opening_hours', {})
+                                st = "Program necunoscut"
+                                if 'open_now' in oh: st = "Deschis acum" if oh['open_now'] else "Închis acum"
+                                if pid in selected_places: selected_places[pid]['is_open_status'] = st
+                                
+                                web = res_det.get('website', "")
+                                if pid in selected_places: selected_places[pid]['website'] = web
+                    except: pass
                 
-                last_leg = route['legs'][-1]
-                summary_text += f"{len(final_order)+1}. 🏠 Întoarcere la START ({last_leg['distance']['text']})\n\n"
+                self.route_total_label.setText(f"🚶 Pietonal: {total_km/1000:.1f} km • {total_min//60} h {total_min%60} min")
                 
-                summary_text += f"📊 Total: {total_km/1000:.1f} km • aprox {total_min//60} min"
+                poly = route['overview_polyline']['points'].replace('\\', '\\\\')
+                self.web_view.page().runJavaScript(f"drawPolyline('{poly}');")
                 
-                # Actualizăm label-ul cu totalul
-                self.route_total_label.setText(f"📊 Traseu: {total_km/1000:.1f} km • aprox {total_min//60} min")
-                self.route_total_label.setVisible(True)
-                
-                # Auto-refresh informații (silențios) pentru a avea datele proaspete în listă
-                # Facem asta înainte de dialog, astfel încât lista din spate să se actualizeze
-                log_info("Se execută auto-refresh informații după generare traseu...")
-                QApplication.processEvents()
-                self.refresh_route_info(silent_mode=True)
-                
-                dialog = RouteDialog(summary_text, self)
-                dialog.exec()
-                
-                # --- ACTUALIZARE HARTĂ INTERACTIVĂ ---
-                safe_polyline = overview_polyline.replace('\\', '\\\\')
-                js_code = f"drawPolyline('{safe_polyline}');"
-                self.web_view.page().runJavaScript(js_code)
-                
-                # --- ADĂUGĂM MARKERELE PENTRU TRASEU ---
                 markers_data = []
-                for i, place_id in enumerate(final_order):
-                    p_data = selected_places.get(place_id, {})
+                for i, pid in enumerate(final_order):
+                    p_data = selected_places.get(pid, {})
                     name = p_data.get('name', f"Punct {i+1}") if isinstance(p_data, dict) else str(p_data)
-                    
-                    # Culoare
-                    initial_color = None
-                    # Putem lua culoarea direct din widget acum
-                    item = self.route_list.item(i)
-                    widget = self.route_list.itemWidget(item)
-                    if widget:
-                         initial_color = getattr(widget, 'initial_color', None)
-
-                    if place_id in route_places_coords:
-                        coords = route_places_coords[place_id]
-                        marker_data = {
-                            'lat': coords['lat'],
-                            'lng': coords['lng'],
-                            'name': name,
-                            'index': i + 1,
-                            'place_id': place_id
-                        }
-                        if initial_color:
-                            marker_data['color'] = initial_color
-                        markers_data.append(marker_data)
-                    else:
-                        # Fallback - doar pentru place_id-uri Google reale
-                        if not place_id.startswith('waypoint_'):
-                            try:
-                                details = gmaps_client.place(place_id=place_id, fields=['geometry', 'name'], language='ro')
-                                loc = details.get('result', {}).get('geometry', {}).get('location', {})
-                                if loc:
-                                    route_places_coords[place_id] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': name}
-                                    marker_data = {
-                                        'lat': loc['lat'],
-                                        'lng': loc['lng'],
-                                        'name': name,
-                                        'index': i + 1,
-                                        'place_id': place_id
-                                    }
-                                    if initial_color:
-                                        marker_data['color'] = initial_color
-                                    markers_data.append(marker_data)
-                            except:
-                                pass
-                        else:
-                            log_debug(f"Waypoint custom fără coordonate (marker skip): {place_id}")
+                    col = None
+                    w = self.route_list.itemWidget(self.route_list.item(i))
+                    if w: col = getattr(w, 'initial_color', None)
+                    lat = None; lng = None
+                    if pid in route_places_coords:
+                        lat = route_places_coords[pid]['lat']; lng = route_places_coords[pid]['lng']
+                    if lat:
+                        m = {'lat': lat, 'lng': lng, 'name': name, 'index': i+1, 'place_id': pid}
+                        if col: m['color'] = col
+                        markers_data.append(m)
                 
                 if markers_data:
-                    markers_json = json.dumps(markers_data)
-                    js_markers = f"addRouteMarkers({markers_json});"
-                    self.web_view.page().runJavaScript(js_markers)
+                    self.web_view.page().runJavaScript(f"addRouteMarkers({json.dumps(markers_data)});")
                 
-                log_success(f"Traseul interactiv și {len(markers_data)} markere au fost desenate pe hartă.")
-                
+                self.reorder_route_list(final_order)
+                log_success("Traseu pietonal generat și salvat în DB.")
+
         except Exception as e:
-            log_error(f"Eroare traseu: {e}")
-            traceback.print_exc()
-            QMessageBox.critical(self, "Eroare", f"Eroare la calcularea traseului: {e}")
+            log_error(f"Eroare API: {e}")
+            QMessageBox.critical(self, "Eroare", str(e))
 
     def send_request(self):
         global current_search_results, current_distance_info, saved_locations
@@ -3924,17 +3511,38 @@ class MainWindow(QMainWindow):
                 # self.zoom_in_button.setEnabled(False)
                 # self.zoom_out_button.setEnabled(False)
             else:
-                first_result = results[0]
-                first_result_loc = first_result.get('geometry', {}).get('location', {})
-                first_lat = first_result_loc.get('lat')
-                first_lng = first_result_loc.get('lng')
-                first_place_id = first_result.get('place_id')
+                # [V45] Actualizare titlu tab cu număr rezultate
+                self.results_tabs.setTabText(0, f"📋 Rezultate ({len(results)})")
                 
-                if first_lat and first_lng:
-                    self.update_map_image(first_lat, first_lng, first_result.get('name'), 15, first_place_id)
+                # [V45] Curățăm eventuale buline vechi de la scanări/căutări anterioare
+                self.web_view.page().runJavaScript("clearHotspots();")
+                
+                # [V45] Colectăm datele pentru a le afișa pe hartă (buline aurii)
+                search_hotspots = []
                 
                 for place in results:
+                    # Creăm cardul în listă
                     self.create_place_card(place, distance_info)
+                    
+                    # Extragem datele pentru marker vizual
+                    loc = place.get('geometry', {}).get('location', {})
+                    if loc:
+                        search_hotspots.append({
+                            'place_id': place.get('place_id'),
+                            'name': place.get('name'),
+                            'lat': loc['lat'],
+                            'lng': loc['lng'],
+                            'rating': place.get('rating', 0),
+                            'reviews': place.get('user_ratings_total', 0),
+                            'types': place.get('types', [])
+                        })
+                
+                # [V45] Trimitem bulinele către hartă fără a muta camera (teleportare eliminată)
+                if search_hotspots:
+                    js_code = f"addHotspotMarkers({json.dumps(search_hotspots)});"
+                    self.web_view.page().runJavaScript(js_code)
+                    # Activăm checkbox-ul ca utilizatorul să știe că sunt afișate
+                    self.show_hotspots_checkbox.setChecked(True)
             
         except Exception as e:
             log_error(f"O eroare a apărut: {e}")
@@ -3995,8 +3603,15 @@ class MainWindow(QMainWindow):
             },
             "diversity_settings": diversity_settings,
             "saved_locations": saved_locations,
-            "saved_route": saved_route_data, # --- NOU: Salvăm lista complexă ---
-            "route_filter_index": self.route_filter_combo.currentIndex()
+            "saved_route": saved_route_data, 
+            "route_filter_index": self.route_filter_combo.currentIndex(),
+            # --- BIFE SCANARE ---
+            "auto_add_enabled": self.auto_add_hotspots_checkbox.isChecked(),
+            "auto_add_limit": self.auto_add_limit_entry.text(),
+            "diversity_enabled": self.diversity_checkbox.isChecked(),
+            "geo_enabled": self.geo_coverage_checkbox.isChecked(),
+            "geo_limit": self.geo_limit_entry.text(),
+            "geo_dist": self.geo_dist_entry.text()
         }
         
         try:
@@ -4109,6 +3724,21 @@ class MainWindow(QMainWindow):
             filter_idx = state.get("route_filter_index", 0)
             self.route_filter_combo.setCurrentIndex(filter_idx)
             self.apply_route_filter()
+            
+            # Restaurăm bifele de scanare
+            if "auto_add_enabled" in state:
+                self.auto_add_hotspots_checkbox.setChecked(state["auto_add_enabled"])
+            if "auto_add_limit" in state:
+                self.auto_add_limit_entry.setText(str(state["auto_add_limit"]))
+            if "diversity_enabled" in state:
+                self.diversity_checkbox.setChecked(state["diversity_enabled"])
+                # [V19 Fix] Încărcare stare V3 (Geo Coverage)
+                if "geo_enabled" in state:
+                    self.geo_coverage_checkbox.setChecked(state["geo_enabled"])
+                if "geo_limit" in state:
+                    self.geo_limit_entry.setText(str(state["geo_limit"]))
+                if "geo_dist" in state:
+                    self.geo_dist_entry.setText(str(state["geo_dist"]))
             
             log_success("Starea a fost încărcată complet.")
             
@@ -4286,7 +3916,7 @@ class MainWindow(QMainWindow):
             
             # Titlu
             title_label = QLabel(f"📍 {result.get('name', name)}")
-            title_label.setStyleSheet("font-size: 16pt; font-weight: bold; color: #e65100;")
+            title_label.setStyleSheet("font-size: 16pt; font-weight: bold; color: #2e7d32;")
             title_label.setWordWrap(True)
             result_layout.addWidget(title_label)
             
@@ -4579,114 +4209,39 @@ class MainWindow(QMainWindow):
     
 
 
+    def fetch_details_now(self, place_id):
+        try:
+            d = gmaps_client.place(place_id=place_id, fields=['opening_hours', 'website'], language='ro')
+            res = d.get('result', {})
+            web = res.get('website', "")
+            oh = res.get('opening_hours', {})
+            stat = "Program necunoscut"
+            if 'open_now' in oh:
+                stat = "Deschis acum" if oh['open_now'] else "Închis acum"
+            return web, stat
+        except:
+            return "", "Program necunoscut"
+
     def scan_hotspots(self):
-        """Scanează zona vizibilă pentru POI-uri cu multe recenzii (hotspots)."""
         global route_places_coords, selected_places, diversity_settings, CATEGORIES_MAP
         
-        log_info("=" * 20 + " SCANARE HOTSPOTS (ULTRA DEBUG) " + "=" * 20)
-        
-        # --- 0. DIAGNOSTIC START ---
-        log_debug(f"STATUS BIFE UI:")
-        log_debug(f"  > Auto Add Top: {self.auto_add_hotspots_checkbox.isChecked()}")
-        log_debug(f"  > Diversitate: {self.diversity_checkbox.isChecked()}")
-        
-        log_debug(f"SETĂRI DIVERSITATE DIN MEMORIE:")
-        if not diversity_settings:
-            log_error("!!! diversity_settings ESTE GOL! !!!")
-        else:
-            for k, v in diversity_settings.items():
-                log_debug(f"  - Categ '{k}': Min={v.get('min')} | Max={v.get('max')} | Rating={v.get('min_rating')}")
-        # --- 0. DIAGNOSTIC END ---
+        sender_btn = self.sender()
+        original_text = ""
+        if isinstance(sender_btn, QPushButton):
+            if not sender_btn.isEnabled(): return 
+            original_text = sender_btn.text()
+            sender_btn.setEnabled(False)
+            sender_btn.setText("⏳ Scanez...")
+            QApplication.processEvents()
 
-        # 1. Input Utilizator (Recenzii minime pentru TOP)
         try:
-            user_min_reviews = int(self.min_reviews_entry.text().strip())
-            if user_min_reviews < 1: user_min_reviews = 100
-        except:
-            user_min_reviews = 100
+            log_info("\n" + "="*40)
+            log_info("🚀 START SCANARE (V44: Detalii Imediate + Logică Corectă)")
+            log_info("="*40)
             
-        # 2. Coordonate
-        search_coords = None
-        search_mode = self.get_search_type()
-        
-        if search_mode == "my_position":
-            coords_text = self.my_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "explore":
-            coords_text = self.explore_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "saved_location":
-            selected_name = self.location_combo.currentText()
-            if selected_name and selected_name in saved_locations:
-                coords_text = saved_locations[selected_name]
-                search_coords = parse_coordinates(coords_text)
-        
-        if not search_coords:
-            QMessageBox.warning(self, "Eroare", "Nu sunt setate coordonate pentru căutare.")
-            return
+            self.clear_route()
             
-        # 3. Raza
-        try:
-            radius_m = int(float(self.radius_entry.text().strip()) * 1000)
-        except:
-            radius_m = 1500
-            
-        log_info(f"Parametri: Centru={search_coords}, Rază={radius_m}m, Filtru User (doar pt Top)={user_min_reviews}")
-        
-        self.clear_results()
-        loading = QLabel("🚀 Scanez satelitul pentru obiective...")
-        loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
-        self.results_layout.addWidget(loading)
-        QApplication.processEvents()
-        
-        try:
-            # Lista extinsă de tipuri
-            poi_types = [
-                'tourist_attraction', 'museum', 'church', 'place_of_worship',
-                'park', 'restaurant', 'cafe', 'bar',
-                'shopping_mall', 'store', 'pharmacy', 'bank', 'hospital'
-            ]
-            
-            all_hotspots = []
-            seen_ids = set()
-            SAFETY_THRESHOLD = 10 
-            
-            for p_type in poi_types:
-                try:
-                    res = gmaps_client.places_nearby(location=search_coords, radius=radius_m, type=p_type, language='ro')
-                    places = res.get('results', [])
-                    for p in places:
-                        pid = p.get('place_id')
-                        if pid in seen_ids: continue
-                        
-                        revs = p.get('user_ratings_total', 0)
-                        if revs < SAFETY_THRESHOLD: continue 
-                        
-                        seen_ids.add(pid)
-                        loc = p.get('geometry', {}).get('location', {})
-                        
-                        hotspot = {
-                            'place_id': pid,
-                            'name': p.get('name', 'N/A'),
-                            'lat': loc.get('lat'),
-                            'lng': loc.get('lng'),
-                            'rating': p.get('rating', 0),
-                            'reviews': revs,
-                            'address': p.get('vicinity', ''),
-                            'types': p.get('types', [])
-                        }
-                        all_hotspots.append(hotspot)
-                        
-                        if pid and loc.get('lat'):
-                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': hotspot['name']}
-                except Exception as e:
-                    log_debug(f"Err scan type {p_type}: {e}")
-
-            # Sortăm baza de date
-            all_hotspots.sort(key=lambda x: x['reviews'], reverse=True)
-            log_success(f"Bază de date scanată: {len(all_hotspots)} locuri totale (>10 recenzii).")
-
-            # --- DEFINIȚII HELPER ---
+            # Definim funcțiile auxiliare
             def get_cat(types):
                 for k, v in CATEGORIES_MAP.items():
                     if any(t in types for t in v['keywords']): return k
@@ -4708,165 +4263,29 @@ class MainWindow(QMainWindow):
                     else: cnts['other'] += 1
                 return cnts
 
-            total_added = 0
+            # Citim inputurile
+            try: min_reviews_top = int(self.min_reviews_entry.text().strip())
+            except: min_reviews_top = 500
+            
+            search_coords = None
+            mode = self.get_search_type()
+            if mode == "my_position": search_coords = parse_coordinates(self.my_coords_entry.text())
+            elif mode == "explore": search_coords = parse_coordinates(self.explore_coords_entry.text())
+            elif mode == "saved_location":
+                sel = self.location_combo.currentText()
+                if sel in saved_locations: search_coords = parse_coordinates(saved_locations[sel])
+            
+            if not search_coords:
+                QMessageBox.warning(self, "Eroare", "Nu am coordonate de start!")
+                return
 
-            # --- PASUL 1: TOP GENERAL ---
-            if self.auto_add_hotspots_checkbox.isChecked():
-                try:
-                    limit_top = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    limit_top = 15
-                
-                log_info(f"--- PASUL 1: Top General (Max {limit_top}, Recenzii >= {user_min_reviews}) ---")
-                
-                step1_count = 0
-                for h in all_hotspots:
-                    if step1_count >= limit_top: break
-                    
-                    if h['reviews'] < user_min_reviews: continue
-                    if h['rating'] < 4.0: continue
-                    if h['place_id'] in selected_places: continue
-                    if is_excluded(h['types']): continue
-                    
-                    cat = get_cat(h['types'])
-                    inv = get_inventory()
-                    if cat in diversity_settings:
-                        max_allowed = diversity_settings[cat].get('max', 99)
-                        if inv.get(cat, 0) >= max_allowed: 
-                            # log_debug(f"Skip Top '{h['name']}' ({cat}) - Limită MAX atinsă ({max_allowed})")
-                            continue
-
-                    self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                    step1_count += 1
-                    log_success(f"✅ [TOP] {h['name']} ({h['reviews']} recenzii) -> Cat: {cat}")
-                
-                total_added += step1_count
-            else:
-                log_info("--- Pasul 1 Sărit (Bifa Auto-Add Top nu e pusă) ---")
-
-            # --- PASUL 2: DIVERSITATE ---
-            if self.diversity_checkbox.isChecked():
-                log_info("--- PASUL 2: Completare Diversitate ---")
-                
-                # Logăm inventarul curent
-                curr_inv = get_inventory()
-                log_debug(f"Inventar după Pasul 1: {curr_inv}")
-                
-                for cat_key, rules in diversity_settings.items():
-                    target_min = rules.get('min', 0)
-                    min_rating = rules.get('min_rating', 0)
-                    
-                    curr_val = curr_inv.get(cat_key, 0)
-                    needed = target_min - curr_val
-                    
-                    log_debug(f"🔎 Analiză '{cat_key}': Am {curr_val} / Vreau Minim {target_min}. (Rating {min_rating}+)")
-                    
-                    if target_min <= 0:
-                        # log_debug(f"   -> Skip (Minimul cerut este 0)")
-                        continue
-                        
-                    if needed <= 0: 
-                        # log_debug(f"   -> OK (Am destule)")
-                        continue
-                    
-                    log_info(f"   👉 Trebuie să găsesc încă {needed} x {cat_key}...")
-                    
-                    # Căutăm candidați în TOATĂ lista
-                    candidates = []
-                    for h in all_hotspots:
-                        if h['place_id'] in selected_places: continue
-                        if h['rating'] < min_rating: continue
-                        if is_excluded(h['types']): continue
-                        
-                        if get_cat(h['types']) == cat_key: 
-                            candidates.append(h)
-                    
-                    # Sortăm după relevanță
-                    candidates.sort(key=lambda x: x['reviews'], reverse=True)
-                    log_debug(f"   -> Candidați disponibili în DB: {len(candidates)}")
-                    
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                        total_added += 1
-                        log_success(f"⚖️ [DIVERSITATE] Adăugat: {h['name']} ({h['reviews']} recenzii)")
-            else:
-                log_warning("⚠️ Pasul 2 (Diversitate) SĂRIT! Bifa nu este activă.")
+            try: radius_m = int(float(self.radius_entry.text().strip()) * 1000)
+            except: radius_m = 1500
+            
+            log_info(f"📍 Centru: {search_coords} | Rază: {radius_m}m | Filtru: {min_reviews_top}+ recenzii")
 
             self.clear_results()
             
-            # Afișăm pe hartă DOAR ce a cerut userul (vizual)
-            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= user_min_reviews]
-            if visual_hotspots:
-                js_code = f"addHotspotMarkers({json.dumps(visual_hotspots)});"
-                self.web_view.page().runJavaScript(js_code)
-                self.show_hotspots_checkbox.setChecked(True)
-            
-            header = QLabel("🔥 Rezultate Scanare")
-            header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #e65100;")
-            self.results_layout.addWidget(header)
-            
-            msg_text = "S-au scanat " + str(len(all_hotspots)) + " locații." + "\n" + "Adăugate în traseu: " + str(total_added) + "."
-            summary = QLabel(msg_text)
-            summary.setStyleSheet("font-size: 11pt; padding: 10px;")
-            self.results_layout.addWidget(summary)
-            self.results_layout.addStretch()
-            
-        except Exception as e:
-            log_error(f"Eroare la scanarea hotspots: {e}")
-            traceback.print_exc()
-            self.clear_results()
-            error_label = QLabel(f"❌ Eroare: {e}")
-            self.results_layout.addWidget(error_label)
-        
-        # --- DIAGNOSTIC START ---
-        # Vedem exact ce butoane sunt apăsate
-        log_debug(f"STATUS BIFE:")
-        log_debug(f"  > Auto Add Top: {self.auto_add_hotspots_checkbox.isChecked()}")
-        log_debug(f"  > Diversitate: {self.diversity_checkbox.isChecked()}")
-        
-        # 1. Input Utilizator (Recenzii minime pentru TOP)
-        try:
-            user_min_reviews = int(self.min_reviews_entry.text().strip())
-            if user_min_reviews < 1: user_min_reviews = 100
-        except:
-            user_min_reviews = 100
-            
-        # 2. Coordonate
-        search_coords = None
-        search_mode = self.get_search_type()
-        
-        if search_mode == "my_position":
-            coords_text = self.my_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "explore":
-            coords_text = self.explore_coords_entry.text().strip()
-            if coords_text: search_coords = parse_coordinates(coords_text)
-        elif search_mode == "saved_location":
-            selected_name = self.location_combo.currentText()
-            if selected_name and selected_name in saved_locations:
-                coords_text = saved_locations[selected_name]
-                search_coords = parse_coordinates(coords_text)
-        
-        if not search_coords:
-            QMessageBox.warning(self, "Eroare", "Nu sunt setate coordonate pentru căutare.")
-            return
-            
-        # 3. Raza
-        try:
-            radius_m = int(float(self.radius_entry.text().strip()) * 1000)
-        except:
-            radius_m = 1500
-            
-        log_info(f"Parametri: Centru={search_coords}, Rază={radius_m}m, Filtru User (doar pt Top)={user_min_reviews}")
-        
-        self.clear_results()
-        loading = QLabel("🚀 Scanez satelitul pentru obiective...")
-        loading.setStyleSheet("font-size: 12pt; color: #1976d2; padding: 20px;")
-        self.results_layout.addWidget(loading)
-        QApplication.processEvents()
-        
-        try:
-            # Lista extinsă de tipuri pentru a prinde tot ce ne trebuie
             poi_types = [
                 'tourist_attraction', 'museum', 'church', 'place_of_worship',
                 'park', 'restaurant', 'cafe', 'bar',
@@ -4876,178 +4295,163 @@ class MainWindow(QMainWindow):
             all_hotspots = []
             seen_ids = set()
             
-            # COLECTARE DATE: Luăm tot ce e decent (>10 recenzii)
-            # NU filtrăm aici cu user_min_reviews (500), ca să avem ce alege la Diversitate
-            SAFETY_THRESHOLD = 10 
-            
+            # Căutare Google Places
             for p_type in poi_types:
                 try:
                     res = gmaps_client.places_nearby(location=search_coords, radius=radius_m, type=p_type, language='ro')
-                    places = res.get('results', [])
-                    for p in places:
+                    for p in res.get('results', []):
                         pid = p.get('place_id')
                         if pid in seen_ids: continue
-                        
                         revs = p.get('user_ratings_total', 0)
-                        if revs < SAFETY_THRESHOLD: continue 
-                        
+                        if revs < 10: continue 
                         seen_ids.add(pid)
                         loc = p.get('geometry', {}).get('location', {})
-                        
-                        hotspot = {
+                        rating = p.get('rating', 0)
+                        if rating < 3.8: continue 
+
+                        all_hotspots.append({
                             'place_id': pid,
                             'name': p.get('name', 'N/A'),
                             'lat': loc.get('lat'),
                             'lng': loc.get('lng'),
-                            'rating': p.get('rating', 0),
+                            'rating': rating,
                             'reviews': revs,
                             'address': p.get('vicinity', ''),
                             'types': p.get('types', [])
-                        }
-                        all_hotspots.append(hotspot)
-                        
-                        # Salvăm coordonatele pentru hartă
+                        })
                         if pid and loc.get('lat'):
-                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': hotspot['name']}
-                except Exception as e:
-                    log_debug(f"Err scan type {p_type}: {e}")
+                            route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': p.get('name')}
+                except: pass
 
-            # Sortăm baza de date descrescător după popularitate
             all_hotspots.sort(key=lambda x: x['reviews'], reverse=True)
-            log_success(f"Bază de date scanată: {len(all_hotspots)} locuri totale (>10 recenzii).")
+            log_success(f"✅ Radar: {len(all_hotspots)} locuri valide.")
 
-            # --- DEFINIȚII HELPER ---
-            def get_cat(types):
-                for k, v in CATEGORIES_MAP.items():
-                    if any(t in types for t in v['keywords']): return k
-                return 'other'
-            
-            def is_excluded(types):
-                return any(t in ['lodging', 'parking', 'gas_station'] for t in types)
+            total_v1 = 0
+            total_v2 = 0
+            total_v3 = 0
 
-            def get_inventory():
-                cnts = {k: 0 for k in CATEGORIES_MAP.keys()}
-                cnts['other'] = 0
-                for pid, data in selected_places.items():
-                    pts = data.get('types', [])
-                    if not pts:
-                        # Încercăm să găsim tipurile în ce am scanat acum
-                        f = next((x for x in all_hotspots if x['place_id'] == pid), None)
-                        if f: pts = f['types']
-                    c = get_cat(pts)
-                    if c in cnts: cnts[c] += 1
-                    else: cnts['other'] += 1
-                return cnts
-
-            total_added = 0
-
-            # --- PASUL 1: TOP GENERAL (Respectă Strict User Limit) ---
+            # >>> PASUL 1: TOP GENERAL <<<
             if self.auto_add_hotspots_checkbox.isChecked():
-                try:
-                    limit_top = int(self.auto_add_limit_entry.text().strip())
-                except:
-                    limit_top = 15
+                try: limit_v1 = int(self.auto_add_limit_entry.text().strip())
+                except: limit_v1 = 15
                 
-                log_info(f"--- PASUL 1: Top General (Max {limit_top}, Recenzii >= {user_min_reviews}) ---")
-                
-                step1_count = 0
+                log_info(f"\n🌊 [V1] Start Val 1: Top {limit_v1}")
+                count = 0
                 for h in all_hotspots:
-                    if step1_count >= limit_top: break
-                    
-                    # AICI se aplică filtrul strict (ex: 500)
-                    if h['reviews'] < user_min_reviews: continue
-                    if h['rating'] < 4.0: continue
+                    if count >= limit_v1: break
+                    if h['reviews'] < min_reviews_top: continue
                     if h['place_id'] in selected_places: continue
                     if is_excluded(h['types']): continue
                     
-                    # Verificăm dacă am depășit maximul permis pentru categoria asta
                     cat = get_cat(h['types'])
                     inv = get_inventory()
-                    if cat in diversity_settings:
-                        max_allowed = diversity_settings[cat].get('max', 99)
-                        if inv.get(cat, 0) >= max_allowed: 
-                            log_debug(f"Skip Top '{h['name']}' ({cat}) - Limită MAX atinsă ({max_allowed})")
-                            continue
-
-                    self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                    step1_count += 1
-                    log_success(f"✅ [TOP] {h['name']} ({h['reviews']} recenzii)")
-                
-                total_added += step1_count
-            else:
-                log_info("--- Pasul 1 Sărit (Bifa Auto-Add Top nu e pusă) ---")
-
-            # --- PASUL 2: DIVERSITATE (Relaxat - Caută și sub 500) ---
-            if self.diversity_checkbox.isChecked():
-                log_info("--- PASUL 2: Completare Diversitate ---")
-                
-                for cat_key, rules in diversity_settings.items():
-                    target_min = rules.get('min', 0)
-                    if target_min <= 0: continue
-                    
-                    inv = get_inventory()
-                    curr = inv.get(cat_key, 0)
-                    needed = target_min - curr
-                    
-                    log_info(f"🔍 Analiză '{cat_key.upper()}': Am {curr}, Vreau Minim {target_min}. Necesar: {needed}")
-                    
-                    if needed <= 0: 
+                    if cat in diversity_settings and inv.get(cat, 0) >= diversity_settings[cat].get('max', 99):
                         continue
-                    
-                    min_rating = rules.get('min_rating', 0)
-                    
-                    # Căutăm candidați în TOATĂ lista (all_hotspots), nu doar în cele populare
-                    candidates = []
-                    for h in all_hotspots:
-                        if h['place_id'] in selected_places: continue
-                        
-                        # Filtre specifice diversitate
-                        if h['rating'] < min_rating: continue
-                        if is_excluded(h['types']): continue
-                        
-                        # Verificăm categoria
-                        if get_cat(h['types']) == cat_key: 
-                            candidates.append(h)
-                    
-                    # Sortăm după relevanță (număr recenzii), ca să luăm "Catedralele", nu capelele mici
-                    candidates.sort(key=lambda x: x['reviews'], reverse=True)
-                    log_info(f"   -> Candidați valizi găsiți: {len(candidates)}")
-                    
-                    # Adăugăm câți avem nevoie
-                    for h in candidates[:needed]:
-                        self.toggle_selection(h['place_id'], h['name'], h['rating'], h['reviews'], 'N/A', Qt.Checked.value, h['types'])
-                        total_added += 1
-                        log_success(f"⚖️ [DIVERSITATE] Adăugat: {h['name']} ({h['reviews']} recenzii)")
-            else:
-                log_warning("⚠️ Pasul 2 (Diversitate) SĂRIT! Bifa nu este activă.")
 
+                    display_name = f"[V1] {h['name']}"
+                    
+                    # FETCH DETAILS (Site + Orar) ACUM
+                    web, stat = self.fetch_details_now(h['place_id'])
+                    
+                    self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, h['types'], web)
+                    count += 1
+                    log_success(f"   + Adăugat: {h['name']}")
+                total_v1 = count
+
+            # >>> PASUL 2: DIVERSITATE <<<
+            if self.diversity_checkbox.isChecked():
+                log_info("\n🌊 [V2] Start Val 2: Diversitate")
+                for cat, rules in diversity_settings.items():
+                    target = rules.get('min', 0)
+                    if target <= 0: continue
+                    curr = get_inventory().get(cat, 0)
+                    needed = target - curr
+                    if needed <= 0: continue
+                    
+                    cands = [h for h in all_hotspots if 
+                             h['place_id'] not in selected_places and 
+                             h['rating'] >= rules.get('min_rating', 0) and 
+                             not is_excluded(h['types']) and 
+                             get_cat(h['types']) == cat]
+                    cands.sort(key=lambda x: x['reviews'], reverse=True)
+                    
+                    for h in cands[:needed]:
+                        display_name = f"[V2] {h['name']}"
+                        
+                        # FETCH DETAILS ACUM
+                        web, stat = self.fetch_details_now(h['place_id'])
+                        
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, h['types'], web)
+                        total_v2 += 1
+                        log_success(f"   + Adăugat: {h['name']}")
+
+            # >>> PASUL 3: GEOGRAFIC <<<
+            if self.geo_coverage_checkbox.isChecked():
+                try: limit_v3 = int(self.geo_limit_entry.text().strip())
+                except: limit_v3 = 3
+                try: min_dist_m = int(self.geo_dist_entry.text().strip())
+                except: min_dist_m = 500 
+                
+                log_info(f"\n🌊 [V3] Start Val 3: Geografic")
+                
+                added_v3 = 0
+                for h in all_hotspots:
+                    if added_v3 >= limit_v3: break
+                    if h['reviews'] < min_reviews_top: continue 
+                    if h['place_id'] in selected_places: continue
+                    if h['rating'] < 4.0: continue 
+                    if is_excluded(h['types']): continue
+                    
+                    my_lat = h['lat']; my_lng = h['lng']
+                    is_isolated = True
+                    for pid, pdata in selected_places.items():
+                        p_coords = route_places_coords.get(pid)
+                        if p_coords:
+                            d = haversine_distance(my_lat, my_lng, p_coords['lat'], p_coords['lng'])
+                            if d < min_dist_m:
+                                is_isolated = False; break
+                    
+                    if is_isolated:
+                        display_name = f"[V3] {h['name']}"
+                        special_types = h['types'] + ['poi_geographic']
+                        
+                        # FETCH DETAILS ACUM
+                        web, stat = self.fetch_details_now(h['place_id'])
+                        
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, special_types, web)
+                        added_v3 += 1; total_v3 += 1
+                        log_success(f"   + Adăugat [V3]: {h['name']}")
+
+            # --- FINAL ---
             self.clear_results()
+            self.results_tabs.setCurrentIndex(1) # Mergi la Tab Traseu
             
-            # Afișăm pe hartă DOAR ce a cerut userul (vizual)
-            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= user_min_reviews]
+            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= min_reviews_top]
             if visual_hotspots:
                 js_code = f"addHotspotMarkers({json.dumps(visual_hotspots)});"
                 self.web_view.page().runJavaScript(js_code)
                 self.show_hotspots_checkbox.setChecked(True)
             
+            # HEADER REZULTATE
             header = QLabel("🔥 Rezultate Scanare")
-            header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #e65100;")
+            header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #2e7d32;")
             self.results_layout.addWidget(header)
             
-            msg = "S-au scanat " + str(len(all_hotspots)) + " locații." + "\n" + "Adăugate în traseu: " + str(total_added) + "."
+            msg = f"Total: {total_v1 + total_v2 + total_v3}\n[V1] Top: {total_v1}\n[V2] Div: {total_v2}\n[V3] Geo: {total_v3}"
             summary = QLabel(msg)
-            summary.setStyleSheet("font-size: 11pt; padding: 10px;")
+            summary.setStyleSheet("font-size: 11pt; padding: 10px; font-family: monospace;")
             self.results_layout.addWidget(summary)
             self.results_layout.addStretch()
             
         except Exception as e:
-            log_error(f"Eroare la scanarea hotspots: {e}")
+            log_error(f"Err: {e}")
             traceback.print_exc()
-            self.clear_results()
-            error_label = QLabel(f"❌ Eroare: {e}")
-            self.results_layout.addWidget(error_label)
-
+        finally:
+            if isinstance(sender_btn, QPushButton):
+                sender_btn.setEnabled(True)
+                sender_btn.setText(original_text if original_text else "🔥 Scanează și Generează")
     
+
     def create_hotspot_card(self, hotspot, rank):
         """Creează un card pentru un hotspot."""
         global selected_places
@@ -5149,6 +4553,25 @@ class MainWindow(QMainWindow):
         global current_zoom_level
         current_zoom_level = zoom
         # log_debug(f"Zoom sincronizat: {zoom}")
+
+    
+    # [V46] Funcție pentru restaurarea listei complete când se dă click pe tab-ul Rezultate
+    def on_results_tab_clicked(self, index):
+        # Index 0 este tab-ul de Rezultate
+        if index == 0:
+            global current_search_results, current_distance_info
+            
+            # Dacă avem rezultate stocate în memorie (cele 17), le redesenăm
+            if current_search_results:
+                log_info("[V46] Restaurare listă completă de rezultate...")
+                self.clear_results()
+                
+                # Reconstruim lista
+                for place in current_search_results:
+                    self.create_place_card(place, current_distance_info)
+                    
+                # Re-adăugăm eventualele headere dacă a fost o scanare (Opțional, dar cardurile sunt baza)
+                # Dacă lista a venit din scanare, ea conține deja tot ce trebuie.
 
     def closeEvent(self, event):
         self.save_state()
