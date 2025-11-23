@@ -41,6 +41,8 @@ from PySide6.QtWebChannel import QWebChannel
 
 
 
+
+
 class WebPage(QWebEnginePage):
     """Pagină web custom care afișează erorile de JS în consola Python."""
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
