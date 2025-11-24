@@ -7,6 +7,7 @@ import requests
 import json
 import webbrowser
 import math
+from custom_data_manager import CustomDataManager
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """Calculează distanța în metri între două coordonate GPS."""
@@ -96,6 +97,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 dotenv_path = os.path.join(script_dir, '.env')
 load_dotenv(dotenv_path=dotenv_path)
 api_key = os.getenv("GOOGLE_API_KEY")
+custom_manager = CustomDataManager()
 
 try:
     gmaps_client = googlemaps.Client(key=api_key)
@@ -725,7 +727,6 @@ class RouteDialog(QDialog):
         text_widget.setText(summary_text)
         layout.addWidget(text_widget)
 
-
 class SettingsDialog(QDialog):
     """Dialog pentru setări."""
     def __init__(self, main_window, parent=None):
@@ -975,6 +976,31 @@ class SettingsDialog(QDialog):
         
         self.notebook.addTab(div_tab, "⚖️ Diversitate")
 
+        # --- BLOC NOU START ---
+        # Tab 4: Date Custom
+        custom_tab = QWidget()
+        custom_layout = QVBoxLayout(custom_tab)
+        
+        self.cb_custom_enable = QCheckBox("Activează 'Date Custom' (Mănăstiri)")
+        self.cb_custom_enable.setChecked(custom_manager.is_enabled)
+        custom_layout.addWidget(self.cb_custom_enable)
+        
+        h_file = QHBoxLayout()
+        self.custom_path_entry = QLineEdit(custom_manager.file_path)
+        h_file.addWidget(self.custom_path_entry)
+        btn_browse = QPushButton("📂")
+        btn_browse.clicked.connect(self.browse_custom_file) # Vom crea metoda asta
+        h_file.addWidget(btn_browse)
+        custom_layout.addLayout(h_file)
+        
+        btn_load = QPushButton("Încarcă Datele Acum")
+        btn_load.clicked.connect(self.load_custom_data_action) # Vom crea metoda asta
+        custom_layout.addWidget(btn_load)
+        custom_layout.addStretch()
+        
+        self.notebook.addTab(custom_tab, "✞ Date Custom")
+        # --- BLOC NOU FINAL ---
+
         # Butoane generale
         button_frame = QHBoxLayout()
         
@@ -1086,6 +1112,19 @@ class SettingsDialog(QDialog):
         self.prompt_text.setText(DEFAULT_AI_PROMPT)
         ai_prompt_var = DEFAULT_AI_PROMPT
         log_info("Setările AI au fost resetate la valorile implicite.")
+
+
+    def browse_custom_file(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Selectează Excel", "", "Excel (*.xlsx)")
+        if f: self.custom_path_entry.setText(f)
+
+    def load_custom_data_action(self):
+        path = self.custom_path_entry.text()
+        if not path: return
+        cnt = custom_manager.load_from_excel(path)
+        QMessageBox.information(self, "Info", f"S-au încărcat {cnt} mănăstiri.")
+        if cnt > 0: custom_manager.is_enabled = True
+
     
     def save_settings(self):
         global ai_prompt_var, gemini_model_value, diversity_settings
@@ -1117,12 +1156,17 @@ class SettingsDialog(QDialog):
                 'min_rating': min_rating
             }
             
+
+
+        custom_manager.is_enabled = self.cb_custom_enable.isChecked()
+        if custom_manager.is_enabled:
+            custom_manager.load_from_excel(self.custom_path_entry.text())
+
         log_success("Setările au fost salvate.")
         self.accept()
 
 
-# --- Helper Categorii (Dinamic) ---
-# --- Helper Categorii (Dinamic) ---
+
 # --- Helper Categorii (Dinamic) ---
 def get_category_label(types_list):
     if not types_list: return "📍 Locație"
@@ -1332,7 +1376,7 @@ class RouteItemWidget(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Asistent Local v17.1 (PySide6)")
+        self.setWindowTitle("City Break Assistant (PySide6)")
         self.resize(1250, 850)
         
         # Aplicăm stiluri profesionale globale
@@ -1585,7 +1629,7 @@ class MainWindow(QMainWindow):
         
         # Buton Setare Explorare
         self.btn_set_exp = QPushButton("⬇️ Setează Explorare Aici")
-        self.btn_set_exp.setFixedHeight(40)
+        self.btn_set_exp.setFixedHeight(45)
         self.btn_set_exp.setStyleSheet("background-color: #ff9800; color: white; font-weight: bold; font-size: 11pt; border-radius: 4px;")
         self.btn_set_exp.clicked.connect(self.set_map_center_as_explore)
         l1.addWidget(self.btn_set_exp)
@@ -1601,23 +1645,28 @@ class MainWindow(QMainWindow):
         
         top_layout.addWidget(g1)
         
-        # GRUP 2
-        # --- GRUP 2: GENERATOR INTELIGENT (V26 - Inputuri Mai Mari) ---
-        # --- GRUP 2: GENERATOR INTELIGENT (V27 - Font Mare & Input Inalt) ---
-        # --- GRUP 2: GENERATOR INTELIGENT (V28 - Reorganizat Logic) ---
-        # --- GRUP 2: GENERATOR INTELIGENT (V29 - Texte Explicite) ---
         # --- GRUP 2: GENERATOR INTELIGENT (V30 - Inputuri Late 60px) ---
         g2 = QGroupBox("2. Generator Inteligent")
         g2.setFixedWidth(460) 
         l2 = QVBoxLayout(g2)
         l2.setSpacing(8)
         
-        # 1. Checkbox Afisare
-        self.show_hotspots_checkbox = QCheckBox("Arată zonele interesante pe hartă")
+        # 1. Checkbox Afisare Google Hotspots
+        self.show_hotspots_checkbox = QCheckBox("Arată zonele interesante pe hartă (Google)")
         self.show_hotspots_checkbox.setStyleSheet("font-size: 10pt;")
         self.show_hotspots_checkbox.setChecked(True)
         self.show_hotspots_checkbox.stateChanged.connect(self.toggle_hotspots_visibility)
         l2.addWidget(self.show_hotspots_checkbox)
+
+        # --- COD NOU START: Checkbox Mănăstiri Custom ---
+        self.show_custom_checkbox = QCheckBox("Arată Strat Custom (Strat Excel)")
+        # Culoare Mov (#8e24aa) pentru a se distinge de restul
+        self.show_custom_checkbox.setStyleSheet("color: #8e24aa; font-weight: bold; font-size: 10pt;")
+        self.show_custom_checkbox.setChecked(True)
+        # Conectăm la funcția pe care o vom adăuga la Pasul 5
+        self.show_custom_checkbox.stateChanged.connect(self.toggle_custom_layer)
+        l2.addWidget(self.show_custom_checkbox)
+        # --- COD NOU FINAL ---
         
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
@@ -1694,8 +1743,8 @@ class MainWindow(QMainWindow):
         l2.addStretch()
         
         # 5. SCANARE
-        b_scan = QPushButton("🔥 Scanează și Generează")
-        b_scan.setFixedHeight(40)
+        b_scan = QPushButton("🔥 Scanează Raza și Generează Locații")
+        b_scan.setFixedHeight(45)
         b_scan.setStyleSheet("background-color: #ff5722; color: white; font-weight: bold; border-radius: 4px; font-size: 11pt;")
         b_scan.clicked.connect(self.scan_hotspots)
         l2.addWidget(b_scan)
@@ -1776,32 +1825,40 @@ class MainWindow(QMainWindow):
         
         l3.addStretch() 
         
-        # 5. BUTOANE MICI
+        # 5. BUTOANE MICI (Aici adăugăm butonul de Export)
         h_small_btns = QHBoxLayout()
         
         b_sav = QPushButton("💾")
-        b_sav.setFixedSize(80, 40)
+        b_sav.setFixedSize(105, 40)
         b_sav.setToolTip("Salvează Traseu")
         b_sav.clicked.connect(self.save_route_to_file)
         h_small_btns.addWidget(b_sav)
         
         b_lod = QPushButton("📂")
-        b_lod.setFixedSize(80, 40)
+        b_lod.setFixedSize(105, 40)
         b_lod.setToolTip("Încarcă Traseu")
         b_lod.clicked.connect(self.load_route_from_file)
         h_small_btns.addWidget(b_lod)
         
         b_ref = QPushButton("🔄")
-        b_ref.setFixedSize(80, 40)
+        b_ref.setFixedSize(105, 40)
         b_ref.setToolTip("Reîmprospătează Info Traseu")
         b_ref.clicked.connect(self.refresh_route_info)
         h_small_btns.addWidget(b_ref)
+
+        # --- [NOU] BUTON EXPORT TELEFON ---
+        b_exp = QPushButton("📲")
+        b_exp.setFixedSize(105, 40)
+        b_exp.setToolTip("Trimite Traseul pe Telefon (Google Maps)")
+        b_exp.clicked.connect(self.export_to_google_maps_url) # Metoda pe care am creat-o la Pasul 2
+        h_small_btns.addWidget(b_exp)
+        # ----------------------------------
         
         h_small_btns.addStretch()
         l3.addLayout(h_small_btns)
         
         # 6. BUTON MARE
-        b_gen = QPushButton("🗺️ Generează Traseu")
+        b_gen = QPushButton("🗺️ Planifică și Generează Traseu")
         b_gen.setFixedHeight(45) 
         b_gen.setStyleSheet("background-color: #ff5722; color: white; font-weight: bold; font-size: 12pt; border-radius: 5px;")
         b_gen.clicked.connect(self.generate_optimized_route)
@@ -2344,6 +2401,19 @@ class MainWindow(QMainWindow):
         self.web_view.page().runJavaScript(js_code_marker)
         
         log_success(f"Harta interactivă mutată la: {name}")
+
+    def toggle_custom_layer(self, state):
+        if not custom_manager.is_enabled: return
+        
+        if state == Qt.Checked.value:
+            # Luăm datele și le trimitem la hartă
+            all_data = custom_manager.get_all_markers()
+            # Convertim în format JSON pt JS
+            import json
+            js_data = json.dumps(all_data)
+            self.web_view.page().runJavaScript(f"addCustomMarkers({js_data});")
+        else:
+            self.web_view.page().runJavaScript("toggleCustomMarkers(false);")
 
     
     def on_map_click(self):
@@ -3553,6 +3623,71 @@ class MainWindow(QMainWindow):
             error_label = QLabel(f"A apărut o eroare: {e}")
             self.results_layout.addWidget(error_label)
     
+
+
+    def export_to_google_maps_url(self):
+        """Generează un link de navigație Google Maps și îl deschide în browser."""
+        
+        # 1. Obținem ordinea din listă
+        count = self.route_list.count()
+        if count < 2:
+            QMessageBox.warning(self, "Atenție", "Ai nevoie de cel puțin 2 puncte (Start și Destinație) pentru un traseu.")
+            return
+
+        waypoints = []
+        origin_str = ""
+        dest_str = ""
+        
+        # 2. Extragem coordonatele în ordine
+        try:
+            for i in range(count):
+                item = self.route_list.item(i)
+                # Obținem widgetul ca să luăm ID-ul corect
+                widget = self.route_list.itemWidget(item)
+                pid = widget.place_id
+                
+                # Căutăm coordonatele exacte în memoria noastră (fie Google, fie Custom)
+                if pid in route_places_coords:
+                    c = route_places_coords[pid]
+                    coord_str = f"{c['lat']},{c['lng']}"
+                else:
+                    # Fallback (nu ar trebui să se întâmple)
+                    coord_str = widget.name
+                
+                if i == 0:
+                    origin_str = coord_str
+                elif i == count - 1:
+                    dest_str = coord_str
+                else:
+                    waypoints.append(coord_str)
+            
+            # 3. Construim URL-ul
+            # Format: https://www.google.com/maps/dir/?api=1&origin=...&destination=...&waypoints=...&travelmode=driving
+            
+            base_url = "https://www.google.com/maps/dir/?api=1"
+            
+            # Folosim urllib pentru a coda caracterele speciale, deși la coordonate nu e critic
+            import urllib.parse
+            
+            url = f"{base_url}&origin={origin_str}&destination={dest_str}&travelmode=driving"
+            
+            if waypoints:
+                # Waypoints separate prin | (pipe)
+                wp_string = "|".join(waypoints)
+                url += f"&waypoints={wp_string}"
+            
+            log_success(f"Link generat: {url}")
+            
+            # 4. Deschidem în browser
+            webbrowser.open(url)
+            
+            log_info("Link-ul a fost deschis în browser. De acolo îl poți trimite pe telefon.")
+            
+        except Exception as e:
+            log_error(f"Eroare la exportul traseului: {e}")
+            QMessageBox.critical(self, "Eroare", f"Nu s-a putut genera link-ul:\n{e}")
+
+
     def save_state(self):
         global my_coords_full_address, explore_coords_full_address, gemini_model_value, ai_prompt_var, saved_locations
         global current_map_lat, current_map_lng, current_map_name, current_zoom_level, current_map_place_id, selected_places
@@ -3613,7 +3748,11 @@ class MainWindow(QMainWindow):
             "diversity_enabled": self.diversity_checkbox.isChecked(),
             "geo_enabled": self.geo_coverage_checkbox.isChecked(),
             "geo_limit": self.geo_limit_entry.text(),
-            "geo_dist": self.geo_dist_entry.text()
+            "geo_dist": self.geo_dist_entry.text(),
+            
+            # --- [MODIFICARE PASUL 8] SALVARE CALE CUSTOM DATA ---
+            # Salvăm calea doar dacă managerul este activat
+            "custom_data_path": custom_manager.file_path if custom_manager.is_enabled else ""
         }
         
         try:
@@ -3741,13 +3880,24 @@ class MainWindow(QMainWindow):
                     self.geo_limit_entry.setText(str(state["geo_limit"]))
                 if "geo_dist" in state:
                     self.geo_dist_entry.setText(str(state["geo_dist"]))
+
+            # --- [MODIFICARE PASUL 8] RESTAURARE DATE CUSTOM ---
+            if state.get("custom_data_path"):
+                path = state["custom_data_path"]
+                # Încărcăm datele în manager
+                count = custom_manager.load_from_excel(path)
+                if count > 0:
+                    # Activăm bifa în interfața principală
+                    self.show_custom_checkbox.setChecked(True)
+                    log_success(f"S-au restaurat {count} mănăstiri custom din {path}")
             
             log_success("Starea a fost încărcată complet.")
             
         except Exception as e:
             log_error(f"Eroare la încărcarea stării: {e}")
             traceback.print_exc()
-    
+
+
     def on_map_ready(self, success):
         """Se apelează automat când pagina HTML s-a încărcat complet."""
         if not success:
@@ -3756,8 +3906,7 @@ class MainWindow(QMainWindow):
             
         self.map_is_loaded = True
         
-        # --- INJECTARE JS PENTRU SINCRONIZARE ZOOM ---
-        # Asta face ca atunci când dai zoom din mouse, Python să afle imediat
+        # 1. --- INJECTARE JS PENTRU SINCRONIZARE ZOOM (Original) ---
         js_zoom_listener = """
         if (typeof map !== 'undefined') {
             map.addListener('zoom_changed', function() {
@@ -3768,14 +3917,66 @@ class MainWindow(QMainWindow):
         }
         """
         self.web_view.page().runJavaScript(js_zoom_listener)
+
+        # 2. --- INJECTARE JS PENTRU MARKERE CUSTOM / MĂNĂSTIRI (Nou - Pasul 5) ---
+        js_custom = """
+        // Inițializăm lista globală de markere custom
+        window.customMarkers = [];
+
+        // Funcția care primește datele din Python și le desenează
+        function addCustomMarkers(data) {
+            // Curățăm markerii vechi dacă există
+            if (window.customMarkers) {
+                for(let i=0; i<window.customMarkers.length; i++) {
+                    window.customMarkers[i].setMap(null);
+                }
+            }
+            window.customMarkers = [];
+            
+            // Desenăm noii markeri
+            data.forEach(item => {
+                let marker = new google.maps.Marker({
+                    position: {lat: item.lat, lng: item.lng},
+                    map: map,
+                    title: item.name,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 6,              // Dimensiune bulină
+                        fillColor: "#8e24aa",  // Culoare MOV (Specific Mănăstiri)
+                        fillOpacity: 1,
+                        strokeWeight: 1,
+                        strokeColor: "white"
+                    },
+                    zIndex: 1000 // Să stea deasupra celorlalte
+                });
+
+                // Adăugăm evenimentul de click
+                marker.addListener('click', () => {
+                    // Trimitem ID-ul 'custom_...' către Python
+                    if (window.pyObj) {
+                        window.pyObj.receivePOIClick(item.id);
+                    }
+                });
+
+                window.customMarkers.push(marker);
+            });
+        }
+
+        // Funcția pentru a ascunde/afișa stratul rapid (fără reîncărcare)
+        function toggleCustomMarkers(show) {
+            if (window.customMarkers) {
+                window.customMarkers.forEach(m => m.setMap(show ? map : null));
+            }
+        }
+        """
+        self.web_view.page().runJavaScript(js_custom)
         
-        log_success("Browserul a terminat de încărcat harta. Aplicăm starea inițială.")
+        log_success("Browserul a terminat de încărcat harta. Scripturile custom au fost injectate.")
         
-        # Dacă avem coordonate salvate, acum e momentul să mutăm harta
+        # 3. --- RESTAURARE STARE HARTĂ (Original) ---
         global current_map_lat, current_map_lng, current_map_name, current_zoom_level, current_map_place_id
         
         if current_map_lat and current_map_lng:
-            # Apelăm update_map_image care acum va funcționa pentru că self.map_is_loaded e True
             self.update_map_image(
                 current_map_lat, 
                 current_map_lng, 
@@ -3784,11 +3985,15 @@ class MainWindow(QMainWindow):
                 current_map_place_id
             )
         
-        # Restaurăm tipul de hartă (roadmap, satellite, terrain, hybrid)
+        # Restaurăm tipul de hartă
         if hasattr(self, 'current_map_type') and self.current_map_type:
             js_code = f"setMapType('{self.current_map_type}');"
             self.web_view.page().runJavaScript(js_code)
             log_info(f"Tip hartă restaurat: {self.current_map_type}")
+
+        # 4. --- AFIȘARE INIȚIALĂ DATELOR CUSTOM (Nou) ---
+        # Așteptăm 1.5 secunde să fie harta gata desenată, apoi pornim stratul custom
+        QTimer.singleShot(1500, lambda: self.toggle_custom_layer(Qt.Checked.value))
 
 
     def zoom_in(self):
@@ -4021,6 +4226,10 @@ class MainWindow(QMainWindow):
     def on_poi_clicked(self, place_id):
         """Se execută când se dă click pe un POI de pe hartă (ex: restaurant, magazin, etc.)."""
         log_info(f"Se încarcă detalii pentru POI: {place_id}")
+
+        if place_id.startswith("custom_"):
+            self.show_custom_card(place_id)
+            return
         
         # Schimbăm pe tab-ul Rezultate
         self.results_tabs.setCurrentIndex(0)
@@ -4114,6 +4323,67 @@ class MainWindow(QMainWindow):
             error_label.setStyleSheet("color: red; padding: 20px;")
             self.results_layout.addWidget(error_label)
     
+    def show_custom_card(self, pid):
+        data = custom_manager.get_place(pid)
+        if not data: return
+        
+        self.clear_results()
+        self.results_tabs.setCurrentIndex(0)
+        
+        # Construim Cardul
+        card = QFrame()
+        card.setFrameShape(QFrame.Box)
+        card.setStyleSheet("background-color: #f3e5f5; border: 1px solid #8e24aa; padding: 5px;")
+        l = QVBoxLayout(card)
+        
+        # Titlu
+        title = QLabel(f"✞ {data['name']}")
+        title.setStyleSheet("font-size: 14pt; font-weight: bold; color: #4a148c;")
+        l.addWidget(title)
+        
+        # Info Grid (Extins)
+        grid_w = QWidget(); g = QGridLayout(grid_w)
+        
+        # Date Tehnice
+        g.addWidget(QLabel("<b>Hram:</b>"),0,0); g.addWidget(QLabel(data['hram']),0,1)
+        g.addWidget(QLabel("<b>Tip:</b>"),1,0); g.addWidget(QLabel(f"{data['type']} ({data['inhabitants']} viețuitori)"),1,1)
+        g.addWidget(QLabel("<b>An:</b>"),2,0); g.addWidget(QLabel(data['year']),2,1)
+        
+        # Date Administrative (NOU)
+        g.addWidget(QLabel("<b>Regiune:</b>"),3,0); g.addWidget(QLabel(data['region']),3,1)
+        g.addWidget(QLabel("<b>Arhiepiscopie:</b>"),4,0); g.addWidget(QLabel(data['archdiocese']),4,1)
+        g.addWidget(QLabel("<b>Mitropolie:</b>"),5,0); g.addWidget(QLabel(data['metropolis']),5,1)
+        
+        l.addWidget(grid_w)
+        
+        # Butoane
+        h_btns = QHBoxLayout()
+        
+        # Buton Web din Excel
+        if data['website']:
+            btn_web = QPushButton("🌐 Web")
+            btn_web.clicked.connect(lambda: webbrowser.open(data['website']))
+            h_btns.addWidget(btn_web)
+            
+        # Checkbox Traseu
+        chk_route = QCheckBox("Traseu")
+        if pid in selected_places: chk_route.setChecked(True)
+        
+        chk_route.stateChanged.connect(lambda s: self.toggle_custom_selection(pid, data, s))
+        h_btns.addWidget(chk_route)
+        
+        l.addLayout(h_btns)
+        self.results_layout.addWidget(card)
+        self.results_layout.addStretch()
+
+    def toggle_custom_selection(self, pid, data, state):
+        # Injectăm coordonatele în sistemul global ca să ocolim Google Search
+        route_places_coords[pid] = {'lat': data['lat'], 'lng': data['lng'], 'name': data['name']}
+        
+        # Apelăm funcția veche
+        self.toggle_selection(pid, data['name'], "Custom", "N/A", "Deschis", state, ['custom'])
+
+
     def on_waypoint_add(self, lat, lng):
         """Handler pentru adăugare punct intermediar din click dreapta pe hartă."""
         global selected_places, route_places_coords
@@ -4238,12 +4508,12 @@ class MainWindow(QMainWindow):
 
         try:
             log_info("\n" + "="*40)
-            log_info("🚀 START SCANARE (V44: Detalii Imediate + Logică Corectă)")
+            log_info("🚀 START SCANARE (V48: Custom + Google Hybrid)")
             log_info("="*40)
             
             self.clear_route()
             
-            # Definim funcțiile auxiliare
+            # Helper categories
             def get_cat(types):
                 for k, v in CATEGORIES_MAP.items():
                     if any(t in types for t in v['keywords']): return k
@@ -4257,9 +4527,6 @@ class MainWindow(QMainWindow):
                 cnts['other'] = 0
                 for pid, data in selected_places.items():
                     pts = data.get('types', [])
-                    if not pts:
-                        f = next((x for x in all_hotspots if x['place_id'] == pid), None)
-                        if f: pts = f['types']
                     c = get_cat(pts)
                     if c in cnts: cnts[c] += 1
                     else: cnts['other'] += 1
@@ -4269,6 +4536,7 @@ class MainWindow(QMainWindow):
             try: min_reviews_top = int(self.min_reviews_entry.text().strip())
             except: min_reviews_top = 500
             
+            # Determinăm centrul scanării
             search_coords = None
             mode = self.get_search_type()
             if mode == "my_position": search_coords = parse_coordinates(self.my_coords_entry.text())
@@ -4284,24 +4552,63 @@ class MainWindow(QMainWindow):
             try: radius_m = int(float(self.radius_entry.text().strip()) * 1000)
             except: radius_m = 1500
             
-            log_info(f"📍 Centru: {search_coords} | Rază: {radius_m}m | Filtru: {min_reviews_top}+ recenzii")
+            log_info(f"📍 Centru: {search_coords} | Rază: {radius_m}m")
 
             self.clear_results()
             
+            all_hotspots = []
+            seen_ids = set()
+
+            # --- 1. PRIMUL PAS: Adăugăm Mănăstirile Custom din zonă ---
+            # AICI ESTE SCHIMBAREA MAJORĂ FAȚĂ DE CE MI-AI DAT TU
+            if custom_manager.is_enabled:
+                log_info("🔍 Caut în baza de date Custom...")
+                for cid, cdata in custom_manager.places.items():
+                    # Calculăm distanța
+                    dist = haversine_distance(search_coords[0], search_coords[1], cdata['lat'], cdata['lng'])
+                    
+                    if dist <= radius_m:
+                        # E în zonă! O adăugăm manual în listă
+                        all_hotspots.append({
+                            'place_id': cid,
+                            'name': f"[Custom] {cdata['name']}",
+                            'lat': cdata['lat'],
+                            'lng': cdata['lng'],
+                            'rating': 5.0,        # Prioritate Maximă
+                            'reviews': 10000,     # Prioritate Maximă (ca să bată Google)
+                            'address': f"Hram: {cdata['hram']}",
+                            'types': ['custom_place', 'church', 'tourist_attraction']
+                        })
+                        seen_ids.add(cid)
+                        # Salvăm coordonatele pentru traseu
+                        route_places_coords[cid] = {'lat': cdata['lat'], 'lng': cdata['lng'], 'name': cdata['name']}
+                        log_success(f"   -> Găsit Custom: {cdata['name']}")
+
+            # --- 2. AL DOILEA PAS: Scanăm Google (cu filtru anti-dubluri) ---
             poi_types = [
                 'tourist_attraction', 'museum', 'church', 'place_of_worship',
                 'park', 'restaurant', 'cafe', 'bar',
                 'shopping_mall', 'store', 'pharmacy', 'bank', 'hospital'
             ]
             
-            all_hotspots = []
-            seen_ids = set()
-            
-            # Căutare Google Places
             for p_type in poi_types:
                 try:
                     res = gmaps_client.places_nearby(location=search_coords, radius=radius_m, type=p_type, language='ro')
                     for p in res.get('results', []):
+                        
+                        # FILTRU ANTI-DUBLURI (Corect implementat și în ce mi-ai dat tu, dar îl păstrăm aici)
+                        if custom_manager.is_enabled:
+                            try:
+                                g_lat = p['geometry']['location']['lat']
+                                g_lng = p['geometry']['location']['lng']
+                                is_duplicate = False
+                                for c_data in custom_manager.places.values():
+                                    if haversine_distance(g_lat, g_lng, c_data['lat'], c_data['lng']) < 50:
+                                        is_duplicate = True
+                                        break
+                                if is_duplicate: continue # Sărim peste Google dacă avem Custom
+                            except: pass
+
                         pid = p.get('place_id')
                         if pid in seen_ids: continue
                         revs = p.get('user_ratings_total', 0)
@@ -4325,14 +4632,14 @@ class MainWindow(QMainWindow):
                             route_places_coords[pid] = {'lat': loc['lat'], 'lng': loc['lng'], 'name': p.get('name')}
                 except: pass
 
+            # Sortăm: Custom vor fi primele pentru că le-am dat reviews=10000
             all_hotspots.sort(key=lambda x: x['reviews'], reverse=True)
-            log_success(f"✅ Radar: {len(all_hotspots)} locuri valide.")
+            log_success(f"✅ Radar: {len(all_hotspots)} locuri valide (Custom + Google).")
 
             total_v1 = 0
             total_v2 = 0
-            total_v3 = 0
-
-            # >>> PASUL 1: TOP GENERAL <<<
+            
+            # >>> PASUL 3: SELECTARE (V1 - TOP) <<<
             if self.auto_add_hotspots_checkbox.isChecked():
                 try: limit_v1 = int(self.auto_add_limit_entry.text().strip())
                 except: limit_v1 = 15
@@ -4341,107 +4648,89 @@ class MainWindow(QMainWindow):
                 count = 0
                 for h in all_hotspots:
                     if count >= limit_v1: break
-                    if h['reviews'] < min_reviews_top: continue
+                    
+                    # Dacă e Custom, intră automat (ignorăm limita de review-uri a userului pt ele)
+                    is_custom = 'custom_place' in h['types']
+                    if not is_custom and h['reviews'] < min_reviews_top: continue
+                    
                     if h['place_id'] in selected_places: continue
                     if is_excluded(h['types']): continue
                     
-                    cat = get_cat(h['types'])
-                    inv = get_inventory()
-                    if cat in diversity_settings and inv.get(cat, 0) >= diversity_settings[cat].get('max', 99):
-                        continue
+                    # Logică diversitate (nu aplica pe Custom)
+                    if not is_custom:
+                        cat = get_cat(h['types'])
+                        inv = get_inventory()
+                        if cat in diversity_settings and inv.get(cat, 0) >= diversity_settings[cat].get('max', 99):
+                            continue
 
-                    display_name = f"[V1] {h['name']}"
+                    display_name = h['name'] # Are deja prefix [Custom] dacă e cazul
                     
-                    # FETCH DETAILS (Site + Orar) ACUM
-                    web, stat = self.fetch_details_now(h['place_id'])
+                    # Pentru Custom nu mai interogăm Google detalii, le avem deja
+                    web = ""
+                    stat = "Deschis"
+                    if is_custom:
+                        cdata = custom_manager.get_place(h['place_id'])
+                        web = cdata.get('website', '')
+                    else:
+                        web, stat = self.fetch_details_now(h['place_id'])
+                        display_name = f"[V1] {h['name']}"
                     
-                    self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, h['types'], web)
+                    if is_custom:
+                        # Adăugăm folosind metoda specifică pentru Custom (care păstrează coordonatele fixe)
+                        self.toggle_custom_selection(h['place_id'], custom_manager.get_place(h['place_id']), Qt.Checked.value)
+                    else:
+                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, h['types'], web)
+                    
                     count += 1
-                    log_success(f"   + Adăugat: {h['name']}")
+                    log_success(f"   + Adăugat: {display_name}")
                 total_v1 = count
 
-            # >>> PASUL 2: DIVERSITATE <<<
+            # >>> PASUL 4: DIVERSITATE (V2) <<<
             if self.diversity_checkbox.isChecked():
-                log_info("\n🌊 [V2] Start Val 2: Diversitate")
+                # Aici lăsăm doar Google să completeze ce lipsește
+                log_info("\n🌊 [V2] Start Val 2: Diversitate (Google Fill)")
                 for cat, rules in diversity_settings.items():
                     target = rules.get('min', 0)
-                    if target <= 0: continue
                     curr = get_inventory().get(cat, 0)
                     needed = target - curr
                     if needed <= 0: continue
                     
                     cands = [h for h in all_hotspots if 
                              h['place_id'] not in selected_places and 
+                             'custom_place' not in h['types'] and # Excludem custom aici (au fost deja luate la V1)
                              h['rating'] >= rules.get('min_rating', 0) and 
                              not is_excluded(h['types']) and 
                              get_cat(h['types']) == cat]
-                    cands.sort(key=lambda x: x['reviews'], reverse=True)
                     
                     for h in cands[:needed]:
                         display_name = f"[V2] {h['name']}"
-                        
-                        # FETCH DETAILS ACUM
                         web, stat = self.fetch_details_now(h['place_id'])
-                        
                         self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, h['types'], web)
                         total_v2 += 1
                         log_success(f"   + Adăugat: {h['name']}")
 
-            # >>> PASUL 3: GEOGRAFIC <<<
-            if self.geo_coverage_checkbox.isChecked():
-                try: limit_v3 = int(self.geo_limit_entry.text().strip())
-                except: limit_v3 = 3
-                try: min_dist_m = int(self.geo_dist_entry.text().strip())
-                except: min_dist_m = 500 
-                
-                log_info(f"\n🌊 [V3] Start Val 3: Geografic")
-                
-                added_v3 = 0
-                for h in all_hotspots:
-                    if added_v3 >= limit_v3: break
-                    if h['reviews'] < min_reviews_top: continue 
-                    if h['place_id'] in selected_places: continue
-                    if h['rating'] < 4.0: continue 
-                    if is_excluded(h['types']): continue
-                    
-                    my_lat = h['lat']; my_lng = h['lng']
-                    is_isolated = True
-                    for pid, pdata in selected_places.items():
-                        p_coords = route_places_coords.get(pid)
-                        if p_coords:
-                            d = haversine_distance(my_lat, my_lng, p_coords['lat'], p_coords['lng'])
-                            if d < min_dist_m:
-                                is_isolated = False; break
-                    
-                    if is_isolated:
-                        display_name = f"[V3] {h['name']}"
-                        special_types = h['types'] + ['poi_geographic']
-                        
-                        # FETCH DETAILS ACUM
-                        web, stat = self.fetch_details_now(h['place_id'])
-                        
-                        self.toggle_selection(h['place_id'], display_name, h['rating'], h['reviews'], stat, Qt.Checked.value, special_types, web)
-                        added_v3 += 1; total_v3 += 1
-                        log_success(f"   + Adăugat [V3]: {h['name']}")
-
             # --- FINAL ---
             self.clear_results()
-            self.results_tabs.setCurrentIndex(1) # Mergi la Tab Traseu
+            self.results_tabs.setCurrentIndex(1)
             
-            visual_hotspots = [h for h in all_hotspots if h['reviews'] >= min_reviews_top]
-            if visual_hotspots:
-                js_code = f"addHotspotMarkers({json.dumps(visual_hotspots)});"
+            # Afișăm pe hartă TOATE hotspot-urile găsite (Custom + Google)
+            if all_hotspots:
+                # Filtrăm doar pentru vizualizare
+                visual_list = [h for h in all_hotspots if 'custom_place' in h['types'] or h['reviews'] >= min_reviews_top]
+                js_code = f"addHotspotMarkers({json.dumps(visual_list)});"
                 self.web_view.page().runJavaScript(js_code)
                 self.show_hotspots_checkbox.setChecked(True)
             
-            # HEADER REZULTATE
+            # Reîmprospătare strat Custom dedicat (buline mov) ca să fie sigur deasupra
+            self.toggle_custom_layer(Qt.Checked.value)
+
+            # Rezumat
             header = QLabel("🔥 Rezultate Scanare")
             header.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 10px; color: #2e7d32;")
             self.results_layout.addWidget(header)
-            
-            msg = f"Total: {total_v1 + total_v2 + total_v3}\n[V1] Top: {total_v1}\n[V2] Div: {total_v2}\n[V3] Geo: {total_v3}"
+            msg = f"Total: {total_v1 + total_v2}\nCustom/Top: {total_v1}\nDiversitate: {total_v2}"
             summary = QLabel(msg)
-            summary.setStyleSheet("font-size: 11pt; padding: 10px; font-family: monospace;")
+            summary.setStyleSheet("font-size: 11pt; padding: 10px;")
             self.results_layout.addWidget(summary)
             self.results_layout.addStretch()
             
