@@ -1,450 +1,326 @@
-# 🗺️ TuristPro - Planificator Inteligent de Tururi
+# Turist Pro 
 
-O aplicație desktop avansată pentru planificarea și optimizarea tururilor turistice, cu integrare Google Maps și analiză AI a recenziilor.
+Aplicație desktop pentru planificarea rutelor turistice cu integrare Google Maps și scanare automată de obiective de interes.
+
+## 📋 Descriere
+
+Turist Pro este o aplicație avansată de planificare a călătoriilor care permite utilizatorilor să:
+- Găsească și vizualizeze obiective turistice pe hartă
+- Planifice rute personalizate între multiple destinații
+- Scaneze automat puncte de interes de-a lungul traseului
+- Gestioneze baze de date custom cu locații proprii
+- Exporte rute în format KML pentru GPS
 
 ![Screenshot aplicație](capture.png)
 
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
-![PySide6](https://img.shields.io/badge/PySide6-6.0%2B-green)
-![License](https://img.shields.io/badge/license-MIT-blue)
+## ✨ Funcționalități Principale
 
-## 📋 Cuprins
+### 🗺️ Interfață Interactivă cu Hartă
+- Vizualizare hartă Google Maps interactivă
+- 4 tipuri de hartă: Roadmap, Satellite, Hybrid, Terrain
+- Marcare puncte prin click sau căutare
+- Drag & drop pentru reordonarea waypoint-urilor
+- Preview vizual al rutei planificate
 
-- [Caracteristici](#-caracteristici)
-- [Capturi de ecran](#-capturi-de-ecran)
-- [Cerințe](#-cerințe)
-- [Instalare](#-instalare)
-- [Configurare](#-configurare)
-- [Utilizare](#-utilizare)
-- [Funcționalități Detaliate](#-funcționalități-detaliate)
-- [Structura Aplicației](#-structura-aplicației)
-- [Depanare](#-depanare)
-- [Contribuții](#-contribuții)
-- [Licență](#-licență)
+### 🎯 Moduri de Căutare
 
-## ✨ Caracteristici
+#### Mod Radial (Căutare Circulară)
+- Căutare în rază configurabilă (10-200 km)
+- Keywords multiple pentru flexibilitate
+- Filtrare automată după calitate (rating ≥4.0 pentru restaurante)
+- Sortare după distanță sau rating
 
-### 🎯 Funcționalități Principale
+#### Mod Liniar (Scanare pe Traseu)
+- Scanare automată de-a lungul rutei planificate
+- Configurare interval de scanare (5-50 km)
+- Deviere permisă configurabilă (500m - 10km)
+- Export KML cu toate punctele găsite
+- Logging detaliat în fișiere text
 
-- **Căutare Avansată de Locații**: Găsește restaurante, atracții turistice, muzee și alte puncte de interes
-- **Hartă Interactivă Google Maps**: Vizualizare live cu markere personalizabile
-- **Optimizare Rute**: Algoritm de optimizare TSP (Traveling Salesman Problem) pentru trasee eficiente
-- **Analiză AI cu Gemini**: Analiza inteligentă a recenziilor pentru fiecare locație
-- **Scanare Hotspots**: Identificare automată a celor mai populare locații din zonă
-- **Export GPX**: Export trasee pentru aplicații de navigație (Google Maps, Waze, etc.)
+### 📊 Date Custom
+- Import date din Excel (.xlsx)
+- Structură predefinită cu coloane:
+  - Nume, Viețuitori, Hram, Tip, An
+  - Coordonate GPS
+  - Regiune, Arhiepiscopie, Mitropolie
+  - Link-uri web
+- ID-uri unice generate automat
+- Layer vizual separat pe hartă
 
-### 🔥 Scanare Hotspots în 3 Valuri
+### 🔍 Filtrare și Sortare Avansată
+- Filtrare după rating (1-5 stele)
+- Filtrare după număr de recenzii
+- Filtrare după tip (custom/Google)
+- Sortare după distanță sau popularitate
+- Căutare în rezultate
 
-1. **Val 1 - Top Locații**: Cele mai bine cotate și recenzate locații
-2. **Val 2 - Diversitate**: Asigură varietate de categorii (restaurante, muzee, parcuri, etc.)
-3. **Val 3 - Geografic**: Acoperire geografică completă a zonei
+### 💾 Salvare Stare Aplicație
+- Ultimele rute folosite
+- Preferințe utilizator
+- Keywords favorite
+- Poziția hărții
+- Setări de scanare
 
-### 🎨 Caracteristici UI/UX
+## 🛠️ Tehnologii
 
-- **Drag & Drop**: Reorganizare intuitivă a traseului
-- **Sistem de Tab-uri**: Organizare clară între Rezultate, Traseu și Salvate
-- **Salvare Automată**: Starea aplicației se salvează automat
-- **Meniu Contextual**: Click dreapta pentru opțiuni rapide
-- **Notificări Vizuale**: Feedback instant pentru toate acțiunile
+- **Python 3.8+**
+- **PySide6** (Qt6) - Interfață grafică
+- **Google Maps API** - Căutare locații și rutare
+- **OpenPyXL** - Import date Excel
+- **googlemaps-python** - Client API Google
 
-## 🖼️ Capturi de ecran
+## 📦 Instalare
 
-*Adaugă capturi de ecran ale aplicației tale aici*
-
-## 📦 Cerințe
-
-### Sistem de Operare
-- Windows 10/11
-- macOS 10.14+
-- Linux (Ubuntu 20.04+, Fedora 33+)
-
-### Dependențe Python
-
-```
-Python >= 3.8
-PySide6 >= 6.0
-googlemaps >= 4.10.0
-python-dotenv >= 0.19.0
-requests >= 2.26.0
-```
-
-## 🚀 Instalare
-
-### 1. Clonează Repository-ul
-
+### Cerințe
 ```bash
-git clone https://github.com/username/turist-pro.git
-cd turist-pro
+pip install PySide6
+pip install googlemaps
+pip install openpyxl
+pip install python-dotenv
+pip install requests
 ```
 
-### 2. Creează Mediu Virtual (Recomandat)
+### Configurare API Key
 
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Instalează Dependențele
-
-```bash
-pip install -r requirements.txt
-```
-
-**requirements.txt:**
-```txt
-PySide6>=6.0.0
-googlemaps>=4.10.0
-python-dotenv>=0.19.0
-requests>=2.26.0
-```
-
-## 🔑 Configurare
-
-### 1. Obține API Keys
-
-#### Google Maps API Key
-1. Accesează [Google Cloud Console](https://console.cloud.google.com/)
-2. Creează un proiect nou sau selectează unul existent
-3. Activează următoarele API-uri:
+1. Obține un API Key de la [Google Cloud Console](https://console.cloud.google.com/)
+2. Activează serviciile:
    - Maps JavaScript API
    - Places API
-   - Distance Matrix API
-   - Geocoding API
-4. Generează un API Key în secțiunea "Credentials"
-
-#### Gemini API Key (Opțional - pentru analiză AI)
-1. Accesează [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Generează un API Key nou
-
-### 2. Configurează fișierul .env
-
-Creează un fișier `.env` în directorul principal:
+   - Directions API
+3. Creează fișier `.env` în directorul aplicației:
 
 ```env
-GOOGLE_API_KEY=your_google_maps_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
+GOOGLE_MAPS_API_KEY=your_api_key_here
 ```
 
-**⚠️ IMPORTANT**: Nu uita să adaugi `.env` în `.gitignore`!
+### Structura Fișierelor
 
-## 💻 Utilizare
+```
+turist_pro_v05/
+├── turist_pro_v05.py          # Aplicația principală
+├── custom_data_manager.py      # Manager date custom
+├── .env                        # API Key (nu include în Git!)
+├── map_template.html           # Template hartă
+├── Logs/                       # Directorul de loguri (auto-generat)
+└── date_custom.xlsx            # (Opțional) Fișier date custom
+```
+
+## 🚀 Utilizare
 
 ### Pornire Aplicație
+```bash
+python turist_pro_v05.py
+```
+
+### 1. Setare Punct de Plecare
+- **Metoda 1**: Click pe hartă
+- **Metoda 2**: Căutare text în câmpul de sus
+- **Metoda 3**: Click buton "📍 Locație Curentă" (folosește IP geolocation)
+
+### 2. Căutare Radială
+
+1. Setează raza de căutare (slider 10-200 km)
+2. Introdu keywords (ex: "biserică", "mănăstire", "muzeu")
+3. Click "🔍 Căutare Radială"
+4. Examinează rezultatele în tab "Rezultate"
+
+### 3. Planificare Rută
+
+1. Adaugă waypoint-uri (puncte intermediare):
+   - Click "Adaugă Waypoint" și caută locația
+   - Sau click direct pe hartă (mod adăugare waypoint activ)
+2. Reordonează prin drag & drop în listă
+3. Șterge puncte nedorite cu butonul "🗑️"
+4. Click "🎯 Calculează Rută" pentru preview
+5. Click "🚀 SCANARE LINIARĂ" pentru căutare pe traseu
+
+### 4. Scanare Liniară (Avansată)
+
+Configurare parametri:
+- **Interval Scanare**: Distanța între puncte de căutare (5-50 km)
+- **Deviere Google**: Cât de departe de traseu să caute în Google (500m-10km)
+- **Deviere Custom**: Cât de departe să includă locații custom (0.5-20km)
+
+După scanare:
+- Rezultatele apar în tab "Rezultate"
+- Se generează fișier de log detaliat în `Logs/`
+- Butonul "💾 EXPORT KML" devine activ
+- Toate punctele sunt marcate vizual pe hartă
+
+### 5. Export KML
+
+După o scanare liniară:
+1. Click "💾 EXPORT KML"
+2. Alege locația și numele fișierului
+3. Fișierul conține:
+   - Traseu complet
+   - Toate waypoint-urile
+   - Toate locațiile găsite
+   - Informații detaliate (rating, reviews, tipuri)
+
+## 📋 Format Date Custom Excel
+
+### Structura Obligatorie
+
+| Coloană | Index | Nume Header | Format | Exemplu |
+|---------|-------|-------------|--------|---------|
+| C | 2 | Nume | Text | "Biserica Sf. Nicolae" |
+| D | 3 | Viețuitori | Număr | "5000" |
+| E | 4 | Hram | Text | "Sf. Nicolae" |
+| F | 5 | Tip | Text | "Biserică" |
+| G | 6 | An | Număr/Text | "1850" |
+| H | 7 | Coordonate | "lat,lng" | "47.1585, 27.6014" |
+| I | 8 | Regiune | Text | "Moldova" |
+| J | 9 | Arhiepiscopie | Text | "Iași" |
+| K | 10 | Mitropolie | Text | "Moldovei" |
+
+### Reguli Importante
+- Prima linie este header (se ignoră)
+- Coordonatele pot fi separate cu `,` sau `;`
+- Celulele goale se completează automat cu "-"
+- Link-uri web: Adăugă hyperlink pe celula din coloana C (Nume)
+- ID-uri unice sunt generate automat pe baza numelui + coordonate
+
+### Exemplu Rând Valid
+```
+C: Biserica Vovidenia (cu hyperlink către site)
+D: 3500
+E: Sf. Maria
+F: Biserică
+G: 1803
+H: 47.1585, 27.6014
+I: Moldova
+J: Iași
+K: Moldovei și Bucovinei
+```
+
+## ⚙️ Configurări Avansate
+
+### Filtre Calitate
+- Restaurante/Cafenele/Baruri: rating minim 4.0 automat
+- Alte categorii: fără filtru de rating
+- Filtrare după număr recenzii disponibilă în UI
+
+### Parametri de Scanare
+```python
+# Distanța maximă pentru "în apropiere" în mod radial
+MAX_RADIAL_SEARCH = 200_000  # metri
+
+# Interval implicit între scanări
+DEFAULT_SCAN_STEP = 20  # km
+
+# Deviere implicită de la traseu
+DEFAULT_DEVIATION_GOOGLE = 3000  # metri
+DEFAULT_DEVIATION_CUSTOM = 5000  # metri
+```
+
+## 📁 Structura Log-urilor
+
+Fișierele de log se generează automat la fiecare scanare:
+
+```
+Logs/
+└── scan_2025-01-28_143522.txt
+```
+
+### Conținut Log
+- Timestamp pentru fiecare acțiune
+- Parametrii de scanare folosiți
+- Număr de puncte de scanare
+- Tabel detaliat pentru fiecare candidat:
+  - Nume (max 32 caractere)
+  - Rating
+  - Număr voturi
+  - Abatere de la traseu
+  - Status (ACCEPTAT/SKIP)
+- Statistici finale
+
+### Exemplu Fragment Log
+```
+[14:35:25] [INFO] 📍 Puncte de scanare (Pioneze): 8
+[14:35:26] [DATA] 📍 PUNCT SCANARE 1/8 ((47.158, 27.601))
+[14:35:26] [DATA]    🔎 Keyword 'restaurant': 12 candidați brut.
+[14:35:26] [DATA]       NUME                             | RAT. | VOTURI | ABATERE    | STATUS
+[14:35:26] [DATA]       ------------------------------------------------------------------------------------------
+[14:35:26] [DATA]       Restaurant Panoramic            | 4.5  | 324    | 1250m      | ✅ ACCEPTAT
+[14:35:26] [DATA]       Bistro La Castel               | 3.8  | 89     | 890m       | ❌ SKIP CALITATE (3.8<4.0)
+```
+
+## 🔧 Dezvoltare
+
+### Crearea Executabilului (.exe)
 
 ```bash
-python turist_pro_v47_final.py
+pip install pyinstaller
+
+pyinstaller --onefile --windowed \
+    --add-data "map_template.html;." \
+    --add-data ".env;." \
+    --icon=icon.ico \
+    --name="TuristPro" \
+    turist_pro_v05.py
 ```
 
-### Fluxul de Lucru Principal
-
-#### 1️⃣ Setează Locația de Start
-
-```
-Tab: "Coordonate Mea" 
-→ Introdu adresa sau numele orașului
-→ Click "Caută și Actualizează"
-```
-
-#### 2️⃣ Caută Locații
-
-```
-Tab: "Explorează"
-→ Introdu tipul locației (ex: "restaurant", "muzeu")
-→ Setează raza de căutare (500m - 50000m)
-→ Click "Caută Locații"
-```
-
-#### 3️⃣ Scanează Hotspots (Recomandat!)
-
-```
-→ Setează parametrii pentru fiecare val:
-  • Val 1: Top locații (ex: 5-10)
-  • Val 2: Diversitate categorii
-  • Val 3: Acoperire geografică
-→ Click "🔥 Scanează și Generează"
-```
-
-#### 4️⃣ Construiește Traseul
-
-```
-→ Bifează locațiile dorite din lista de rezultate
-→ SAU drag & drop din tab "Rezultate" în "Traseu"
-→ Reordonează prin drag & drop în tab "Traseu"
-```
-
-#### 5️⃣ Optimizează și Exportă
-
-```
-→ Click "🚀 Optimizează Traseu" pentru rută optimă
-→ Click "📥 Export GPX" pentru navigație
-→ Click "💾 Salvează Traseu" pentru salvare locală
-```
-
-## 🔧 Funcționalități Detaliate
-
-### 🗺️ Sistem de Hartă
-
-- **Markere Multiple**: Diferite culori pentru locații din traseu
-- **InfoWindows**: Informații detaliate la click
-- **Zoom Sincronizat**: Zoom-ul se păstrează între actualizări
-- **Markere Hotspots**: Afișare/ascundere hotspots identificate
-
-### 🎯 Scanare Inteligentă
-
-#### Configurare Diversitate Categorii
-
-Aplicația categorizează automat locațiile în:
-
-- 🍴 **Restaurante & Mâncare**
-- ☕ **Cafenele & Patiserii**
-- 🍻 **Baruri & Viață de noapte**
-- 🏛️ **Muzee & Artă**
-- ⛪ **Locuri de cult**
-- 📸 **Atracții turistice**
-- 🌳 **Parcuri & Natură**
-- 🎡 **Zoo & Distracție**
-- 🛍️ **Shopping**
-- 💊 **Sănătate & Farmacii**
-- ⛽ **Utilități**
-
-#### Parametrii Customizabili
-
-Pentru fiecare categorie poți seta:
-- **Min**: Număr minim garantat
-- **Max**: Plafonare pentru categorii suprapopulate
-- **Rating Min**: Filtru calitate (1.0 - 5.0)
-
-### 🤖 Analiză AI (Gemini)
-
-Pentru fiecare locație selectată, AI-ul analizează recenziile și oferă:
-
-1. **Rezumat General**: Impresii generale
-2. **Puncte Forte**: 3-5 aspecte apreciate
-3. **Puncte Slabe**: 3-5 critici frecvente
-4. **Recomandare**: Pentru cine este potrivit
-
-#### Configurare Prompt AI
+### Funcții Ajutătoare Principale
 
 ```python
-Setări → Tab "AI Settings" → Editează prompt-ul → Salvează
+# Calcul distanță între două coordonate
+haversine_distance(lat1, lon1, lat2, lon2) -> float
+
+# Decodare polyline Google
+decode_polyline(polyline_str) -> List[Tuple[float, float]]
+
+# Distanță punct-linie
+point_line_distance(point, start, end) -> float
 ```
 
-### 📊 Optimizare Traseu
+## 🐛 Troubleshooting
 
-Algoritm TSP cu Distance Matrix API:
-- Calculează distanțe reale (nu în linie dreaptă)
-- Optimizează pentru timp minim
-- Păstrează start-ul fix
-- Suportă până la 25 de locații
+### Eroare: "Invalid API Key"
+- Verifică fișierul `.env`
+- Asigură-te că API-urile sunt activate în Google Cloud Console
+- Verifică restricțiile de key (IP, referrer)
 
-### 💾 Salvare și Încărcare
-
-#### Salvare Automată
-- Starea aplicației se salvează automat în `app_state.json`
-- Include coordonate, traseu curent, zoom level
-
-#### Salvare Trasee
-```
-Format: JSON
-Conține: Nume, coordonate, detalii, ordine
-Locație: Aleasă de utilizator
-```
-
-#### Export GPX
-```
-Format: GPX (GPS Exchange Format)
-Compatibil cu: Google Maps, Waze, Garmin, Strava
-Include: Waypoints cu nume și descriere
-```
-
-## 📁 Structura Aplicației
-
-```
-turist-pro/
-│
-├── turist_pro_v47_final.py    # Aplicația principală
-├── .env                        # Configurare API keys (nu include în Git!)
-├── .env.example               # Template pentru .env
-├── app_state.json             # Stare aplicație (generat automat)
-├── requirements.txt           # Dependențe Python
-├── README.md                  # Documentație
-│
-├── saved_routes/              # Trasee salvate (opțional)
-│   ├── traseu_bucuresti.json
-│   └── traseu_brasov.json
-│
-└── exports/                   # Export-uri GPX (opțional)
-    ├── tur_paris.gpx
-    └── tur_roma.gpx
-```
-
-### Clase Principale
-
-#### `MainWindow`
-Fereastra principală cu:
-- Hartă interactivă (QWebEngineView)
-- Sistem de tab-uri (QTabWidget)
-- Gestionare evenimente
-
-#### `WebPage`
-Pagină web custom pentru:
-- Logging erori JavaScript
-- Comunicare Python ↔ JavaScript
-
-#### `ClickableLabel`
-Widget personalizat pentru:
-- Click-uri pe nume locații
-- Actualizare hartă
-
-#### `RouteItem`
-Element drag & drop pentru:
-- Reordonare traseu
-- Meniu contextual
-
-### Funcții Utilitare
-
-- `haversine_distance()`: Calcul distanță GPS
-- `log_*()`: Sistem de logging colorat
-- `fetch_distance_matrix()`: Obține distanțe reale
-- `optimize_route_with_dm()`: Optimizare TSP
-
-## 🐛 Depanare
-
-### Probleme Comune
-
-#### 1. Eroare "API Key Invalid"
-
-```
-Soluție:
-- Verifică că API Key-ul este corect în .env
-- Asigură-te că toate API-urile Google Maps sunt activate
-- Verifică billing-ul în Google Cloud Console
-```
-
-#### 2. Hartă nu se încarcă
-
-```
-Soluție:
+### Hartă nu se încarcă
 - Verifică conexiunea la internet
-- Deschide Developer Tools (F12) pentru erori JavaScript
-- Restart aplicație
-```
+- Verifică consolele JavaScript (meniul Debug)
+- Regenerează hartă (Meniu → Regenerare Hartă)
 
-#### 3. Scanare hotspots nu găsește rezultate
+### Date Custom nu apar
+- Verifică structura Excel (coloane corecte)
+- Verifică formatul coordonatelor (lat,lng)
+- Verifică log-urile pentru erori de import
 
-```
-Soluție:
-- Mărește raza de căutare
-- Scade numărul minim de recenzii
-- Verifică dacă zona are locații populare
-```
+### Scanare Liniară lentă
+- Reduce numărul de keywords
+- Mărește intervalul de scanare
+- Reduce raza de scanare
 
-#### 4. Export GPX eșuează
+## 📝 Changelog
 
-```
-Soluție:
-- Asigură-te că ai permisiuni de scriere
-- Verifică că traseul conține locații
-- Alege un director diferit
-```
-
-### Logging și Debug
-
-Aplicația folosește logging colorat în consolă:
-- 🟢 **SUCCESS**: Operații reușite
-- 🔴 **ERROR**: Erori critice
-- 🟡 **WARNING**: Avertismente
-- 🔵 **DEBUG**: Informații detaliate
-- 🟣 **INFO**: Informații generale
-
-Pentru debug detaliat, verifică consolă în timpul rulării.
-
-## 🤝 Contribuții
-
-Contribuțiile sunt binevenite! Iată cum poți contribui:
-
-### Raportare Bug-uri
-
-1. Verifică dacă bug-ul nu a fost deja raportat
-2. Creează un issue cu:
-   - Descriere detaliată
-   - Pași de reproducere
-   - Screenshot-uri (dacă e relevant)
-   - Versiune Python și OS
-
-### Propuneri Funcționalități
-
-1. Deschide un issue de tip "Feature Request"
-2. Descrie funcționalitatea dorită
-3. Explică cazul de utilizare
-
-### Pull Requests
-
-1. Fork repository-ul
-2. Creează un branch pentru feature (`git checkout -b feature/NumeFeature`)
-3. Commit schimbările (`git commit -am 'Adaugă feature X'`)
-4. Push la branch (`git push origin feature/NumeFeature`)
-5. Deschide un Pull Request
-
-### Standarde Cod
-
-- Follow PEP 8 pentru Python
-- Adaugă docstrings pentru funcții noi
-- Comentează codul complex
-- Testează înainte de commit
-
-## 📝 TODO & Roadmap
-
-### Versiuni Viitoare
-
-- [ ] Suport multi-limbă (EN, DE, FR)
-- [ ] Integrare cu Weather API
-- [ ] Calculare bugete estimative
-- [ ] Export PDF cu itinerar complet
-- [ ] Sincronizare cloud
-- [ ] Aplicație mobilă (React Native)
-- [ ] Partajare trasee între utilizatori
-- [ ] Sistem de review-uri propriu
-
-### Îmbunătățiri Planificate
-
-- [ ] Mod offline (cached maps)
-- [ ] Filtre avansate (preț, timp deschis)
-- [ ] Sugestii bazate pe preferințe utilizator
-- [ ] Integrare cu calendar
-- [ ] Notificări desktop
+### v0.5 (Curent)
+- ✅ Sistem de logging avansat (consolă + fișier)
+- ✅ Tabel detaliat pentru fiecare candidat în scan
+- ✅ Export KML funcțional
+- ✅ Manager date custom cu 3 coloane noi
+- ✅ Filtrare calitate automată
+- ✅ UI îmbunătățit cu tabs și iconițe
+- ✅ Salvare/restaurare stare aplicație
 
 ## 📄 Licență
 
-Acest proiect este licențiat sub licența MIT - vezi fișierul [LICENSE](LICENSE) pentru detalii.
+Acest proiect este proprietate privată. Toate drepturile rezervate.
 
 ## 👨‍💻 Autor
 
-**Numele Tău**
-- GitHub: [@username](https://github.com/username)
-- Email: your.email@example.com
+Dezvoltat pentru planificarea rutelor turistice și descoperirea obiectivelor de interes în România.
 
-## 🙏 Mulțumiri
+## 📞 Suport
 
-- Google Maps API pentru date geografice
-- Google Gemini AI pentru analiză recenzii
-- Comunitatea PySide6 pentru documentație
-- Toți contribuitorii și testerii
-
-## 📧 Contact
-
-Pentru întrebări, sugestii sau suport:
-- Deschide un [Issue](https://github.com/username/turist-pro/issues)
-- Email: your.email@example.com
-- Discord: [Server Link](https://discord.gg/yourserver)
+Pentru probleme sau sugestii, consultă log-urile generate sau contactează dezvoltatorul.
 
 ---
 
-**Made with ❤️ și ☕ în România**
-
-*Călătorii fericite! 🌍✈️*
+**Versiune**: 0.5  
+**Data**: Noiembrie 2024  
+**Status**: Production-Ready
