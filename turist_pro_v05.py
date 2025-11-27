@@ -17,6 +17,21 @@ try:
 except ImportError:
     print("EROARE CRITICĂ: Lipsește fișierul 'custom_data_manager.py'!")
 
+# --- CONFIGURARE CĂI PENTRU EXE ȘI LOGS ---
+# Această secțiune asigură că fișierele sunt citite/scrise unde trebuie (lângă exe sau în temp)
+if getattr(sys, 'frozen', False):
+    # Dacă rulăm ca .exe (PyInstaller)
+    application_path = os.path.dirname(sys.executable)
+    resource_base_path = sys._MEIPASS # Resurse interne (harta, icon)
+else:
+    # Dacă rulăm ca script .py
+    application_path = os.path.dirname(os.path.abspath(__file__))
+    resource_base_path = application_path
+
+def resource_path(relative_path):
+    """ Obține calea absolută către resurse (harta html) """
+    return os.path.join(resource_base_path, relative_path)
+
 # --- VARIABILE GLOBALE LOGARE ---
 current_log_filename = None  
 
@@ -46,7 +61,7 @@ def write_to_file(message, tag="INFO"):
         except Exception as e:
             print(f"Log Error: {e}")
 
-# --- FUNCȚIILE DE LOGARE (Unicele și Adevăratele) ---
+# --- FUNCȚIILE DE LOGARE ---
 
 def log_debug(message, color=Colors.OKBLUE):
     print(f"{color}[DEBUG] {message}{Colors.ENDC}")
@@ -68,12 +83,12 @@ def log_info(message):
     print(f"{Colors.HEADER}[INFO] {message}{Colors.ENDC}")
     write_to_file(message, "INFO")
 
-# --- [NOU] FUNCȚIE PENTRU DETALII MASSIVE (DOAR ÎN FIȘIER) ---
 def log_file_only(message, tag="DATA"):
     """Scrie doar în fișierul text, NU afișează în consolă."""
     write_to_file(message, tag)
 
 
+# --- FUNCȚII GEOMETRICE ---
 def haversine_distance(lat1, lon1, lat2, lon2):
     """Calculează distanța în metri între două coordonate GPS."""
     try:
@@ -127,7 +142,6 @@ def point_line_distance(point, start, end):
     if lat1 == lat2 and lon1 == lon2:
         return haversine_distance(point[0], point[1], start[0], start[1])
 
-    # Convertim în cartezian aprox pentru calcul rapid de proiecție
     x = (lon0 - lon1) * math.cos((lat0 + lat1) / 2)
     y = lat0 - lat1
     dx = (lon2 - lon1) * math.cos((lat2 + lat1) / 2)
@@ -147,14 +161,6 @@ def point_line_distance(point, start, end):
         xx = lon1 + param * dx
         yy = lat1 + param * dy
 
-    # Înapoi la distanța haversine
-    # Aproximativ: distanța dintre (lat0, lon0) și punctul proiectat
-    # Pentru precizie maximă folosim haversine între Point și Proiecție
-    # (Proiecția în radiani trebuie convertită la grade aprox)
-    proj_lat = math.degrees(yy)
-    proj_lon = math.degrees(xx) / math.cos((lat0+yy)/2) # Corecție long
-    # Simplificare: calculăm distanța direct folosind formula Cross-Track pentru sferă e prea complex
-    # Folosim implementarea Haversine directă între pct și proiecția pe segment
     return haversine_distance(point[0], point[1], math.degrees(lat1 + param*dy), math.degrees(lon1 + param*dx))
 
 
@@ -163,17 +169,14 @@ from PySide6.QtWidgets import (QTabBar,
     QLabel, QLineEdit, QPushButton, QRadioButton, QCheckBox, QTextEdit,
     QFrame, QScrollArea, QComboBox, QTabWidget, QListWidget, QDialog,
     QMessageBox, QButtonGroup, QSizePolicy, QGroupBox, QDialogButtonBox,
-    QAbstractItemView, QListWidgetItem, QMenu, QFileDialog
+    QAbstractItemView, QListWidgetItem, QMenu, QFileDialog, 
+    QInputDialog # <--- IMPORT NECESAR PENTRU POPUP
 )
 from PySide6.QtCore import Qt, QByteArray, Signal, QTimer, QMimeData, QUrl, Slot, QObject, QFileInfo, QSize
 from PySide6.QtGui import QPixmap, QFont, QCursor, QImage, QDrag, QAction, QGuiApplication
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings, QWebEnginePage
 from PySide6.QtWebChannel import QWebChannel
-
-
-
-
 
 
 class WebPage(QWebEnginePage):
@@ -186,10 +189,8 @@ class WebPage(QWebEnginePage):
         log_info(f"JS CONSOLE: {message} (Linia {lineNumber})")
 
 
-
+# --- VARIABILE GLOBALE & CONFIGURARE ---
 STATE_FILE = "app_state.json"
-
-# NOU: Setări implicite pentru Gemini AI
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite"
 DEFAULT_AI_PROMPT = """Ești un analist expert în recenzii. Analizează următoarele recenzii și oferă:
 
@@ -200,11 +201,45 @@ DEFAULT_AI_PROMPT = """Ești un analist expert în recenzii. Analizează următo
 
 Fii concis, obiectiv și bazează-te doar pe informațiile din recenzii. Răspunde în limba română."""
 
-log_info("Aplicația pornește (Mod: Distance Matrix + AI Summary)...")
-script_dir = os.path.dirname(os.path.abspath(__file__))
-dotenv_path = os.path.join(script_dir, '.env')
+log_info("Aplicația pornește (Mod: Distance Matrix + AI Summary + Exe Support)...")
+
+# --- AUTO-CONFIGURARE .ENV ȘI API KEY ---
+# 1. Încărcăm env de lângă executabil
+dotenv_path = os.path.join(application_path, '.env')
 load_dotenv(dotenv_path=dotenv_path)
 api_key = os.getenv("GOOGLE_API_KEY")
+
+# 2. Dacă nu există cheie, o cerem (AUTO-CREATE ENV)
+if not api_key:
+    # Creăm o instanță temporară de Qt pentru a afișa fereastra de dialog
+    temp_app = QApplication.instance()
+    if not temp_app:
+        temp_app = QApplication(sys.argv)
+
+    while not api_key:
+        input_text, ok = QInputDialog.getText(
+            None, 
+            "Cheie API Google Gemini Necesară", 
+            "Te rog introdu cheia API Google Gemini.\nAceasta va fi salvată local într-un fișier .env pentru a nu mai fi cerută."
+        )
+        
+        if ok and input_text.strip():
+            api_key = input_text.strip()
+            try:
+                # Scriem fișierul .env
+                with open(dotenv_path, "w", encoding="utf-8") as f:
+                    f.write(f"GOOGLE_API_KEY={api_key}")
+                # O setăm și în memorie
+                os.environ["GOOGLE_API_KEY"] = api_key
+                log_success(f"Fișierul .env a fost creat la: {dotenv_path}")
+            except Exception as e:
+                QMessageBox.critical(None, "Eroare", f"Nu am putut salva fișierul .env:\n{e}")
+                sys.exit()
+        else:
+            # Dacă utilizatorul dă Cancel, închidem tot
+            sys.exit()
+
+# --- INITIALIZARE CLIENTE ---
 custom_manager = CustomDataManager()
 
 try:
@@ -215,25 +250,6 @@ except Exception as e:
     sys.exit()
 
 # Variabile pentru starea curentă a hărții
-current_map_lat = None
-current_map_lng = None
-current_map_name = None
-current_zoom_level = 15
-current_map_place_id = None
-current_search_results = []
-current_distance_info = {}
-saved_locations = {}
-my_coords_full_address = ""
-explore_coords_full_address = ""
-selected_places = {}
-
-# NOU: Dict pentru a stoca coordonatele locațiilor din traseu
-route_places_coords = {}
-
-# NOU: Dict pentru a păstra culorile inițiale ale locațiilor (nu se schimbă la mutare)
-place_initial_colors = {}
-
-# Variabile globale
 current_map_lat = None
 current_map_lng = None
 current_map_name = None
@@ -333,8 +349,6 @@ CATEGORIES_MAP = {
 }
 
 # Setări implicite extinse (Min/Max)
-# min = Garanție (Dacă nu sunt destule, caută activ)
-# max = Plafon (Dacă sunt prea multe populare, ignoră restul)
 diversity_settings = {
     'restaurant': {'min': 2, 'max': 5, 'min_rating': 4},
     'cafe':       {'min': 2, 'max': 4, 'min_rating': 4},
@@ -357,6 +371,7 @@ def parse_coordinates(coords_string: str):
         return lat, lon
     except Exception:
         return None
+
 
 
 def reverse_geocode(lat, lng):
@@ -2012,8 +2027,8 @@ class MainWindow(QMainWindow):
         
         # Rând 1: Cuvinte Cheie
         l_lin.addWidget(QLabel("<b>Ce căutăm?</b> (Google Keywords):"))
-        self.route_keywords_entry = QLineEdit("benzinarie, restaurant, parcare", self)
-        self.route_keywords_entry.setPlaceholderText("ex: Socar, McDonalds, Castel")
+        self.route_keywords_entry = QLineEdit("", self) # Lăsăm gol aici
+        self.route_keywords_entry.setPlaceholderText("ex: benzinarie, restaurant")
         self.route_keywords_entry.setFixedHeight(32)
         l_lin.addWidget(self.route_keywords_entry)
         
@@ -2284,7 +2299,7 @@ class MainWindow(QMainWindow):
         # 4. Încărcăm HTML-ul
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            map_path = os.path.join(script_dir, "map_template.html")
+            map_path = resource_path("map_template.html")
 
             with open(map_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
@@ -4066,7 +4081,7 @@ class MainWindow(QMainWindow):
         # --- SETUP LOGARE ---
         search_log_file = None
         try:
-            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Logs")
+            log_dir = os.path.join(application_path, "Logs")
             if not os.path.exists(log_dir): os.makedirs(log_dir)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             search_log_file = os.path.join(log_dir, f"Search_{timestamp}.txt")
@@ -4348,6 +4363,7 @@ class MainWindow(QMainWindow):
         state = {
             # FIX: Folosim .text() pentru QLineEdit
             "search_query": self.prompt_entry.text().strip(),
+            "route_keywords": self.route_keywords_entry.text().strip(),
             "my_coords": self.my_coords_entry.text().strip(),
             "my_coords_address": my_coords_full_address,
             "explore_coords": self.explore_coords_entry.text().strip(),
@@ -4408,6 +4424,10 @@ class MainWindow(QMainWindow):
                 state = json.load(f)
             
             self.prompt_entry.setText(state.get("search_query", ""))
+
+            default_kw = "benzinarie, restaurant, parcare"
+            self.route_keywords_entry.setText(state.get("route_keywords", default_kw))
+
             self.my_coords_entry.setText(state.get("my_coords", ""))
             self.explore_coords_entry.setText(state.get("explore_coords", ""))
             self.radius_entry.setText(state.get("radius_km", "1.5"))
@@ -5086,28 +5106,41 @@ class MainWindow(QMainWindow):
         """Handler pentru setare poziție curentă din click dreapta pe hartă."""
         coords_text = f"{lat}, {lng}"
         
-        # Setăm coordonatele
+        # 1. Actualizăm în Configurarea Zonă (Lângă mine)
         self.my_coords_entry.setText(coords_text)
-        
-        # Selectăm radio button-ul "Lângă mine"
         self.radio_my_position.setChecked(True)
         
-        # Actualizăm starea UI (activăm câmpurile pentru poziția mea)
-        self.update_ui_states()
-        
-        # Forțăm activarea câmpului și butonului (pentru siguranță)
-        self.my_coords_entry.setEnabled(True)
-        self.my_coords_geo_btn.setEnabled(True)
-        
-        # Actualizăm adresa și afișăm marker pe hartă
+        # Calculăm și afișăm adresa
         self.update_address_and_center_map(
             self.my_coords_entry, 
             self.my_coords_address_label, 
             "Poziția mea", 
             "my_coords"
         )
+
+        # 2. --- [MODIFICARE] ACTUALIZĂM ȘI ÎN TRASEU (PORNIRE A) ---
+        if hasattr(self, 'route_start_entry'):
+            self.route_start_entry.setText(coords_text)
+            
+            # Dacă avem și label pentru adresă în Traseu, îl actualizăm și pe el
+            # (update_address_and_center_map a calculat deja my_coords_full_address)
+            if hasattr(self, 'route_start_lbl'):
+                # Reutilizăm adresa deja calculată dacă e disponibilă, altfel o recalculăm
+                if my_coords_full_address:
+                    # Scurtăm adresa
+                    short_addr = my_coords_full_address[:57] + "..." if len(my_coords_full_address) > 60 else my_coords_full_address
+                    self.route_start_lbl.setText(f"📍 {short_addr}")
+                else:
+                    # Facem request separat dacă nu avem adresa
+                    self.update_address_from_coords(self.route_start_entry, self.route_start_lbl)
+        # -----------------------------------------------------------
         
-        log_success(f"Poziție curentă setată: {coords_text}")
+        # Actualizăm starea UI (activăm câmpurile)
+        self.update_ui_states()
+        self.my_coords_entry.setEnabled(True)
+        self.my_coords_geo_btn.setEnabled(True)
+        
+        log_success(f"Poziție curentă setată: {coords_text} (Sincronizat cu Traseu A)")
     
 
 
@@ -5145,7 +5178,7 @@ class MainWindow(QMainWindow):
 
         # --- LOGGING ---
         try:
-            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Logs")
+            log_dir = os.path.join(application_path, "Logs")
             if not os.path.exists(log_dir): os.makedirs(log_dir)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             current_log_filename = os.path.join(log_dir, f"Scan_{timestamp}.txt")
@@ -5512,7 +5545,7 @@ class MainWindow(QMainWindow):
 
 
     def scan_linear_corridor(self):
-        """LOGICA DE SCANARE PE CORIDOR (Traseu A->B) - V64 (Rezultate Intermediare + Log Clean)."""
+        """LOGICA DE SCANARE PE CORIDOR (Traseu A->B) - V65 (Log Detaliat cu Rating/Voturi)."""
         global current_log_filename, linear_places, linear_places_coords, route_places_coords, selected_places
         
         sender_btn = self.sender()
@@ -5525,7 +5558,7 @@ class MainWindow(QMainWindow):
 
         # Init Log
         try:
-            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Logs")
+            log_dir = os.path.join(application_path, "Logs")
             if not os.path.exists(log_dir): os.makedirs(log_dir)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             current_log_filename = os.path.join(log_dir, f"ScanRoute_{timestamp}.txt")
@@ -5537,7 +5570,7 @@ class MainWindow(QMainWindow):
             self.clear_results()
             
             log_info("\n" + "="*60)
-            log_info("🚀 START SCANARE LINIARĂ (V64: Console Clean)")
+            log_info("🚀 START SCANARE LINIARĂ (V65: Detalii Complete)")
             log_info("="*60)
             
             start_txt = self.route_start_entry.text().strip()
@@ -5556,6 +5589,8 @@ class MainWindow(QMainWindow):
             
             log_info(f"Start: {start_txt} -> End: {end_txt}")
             log_info(f"Parametri: Pas={scan_step_km}km, Rază={scan_radius_km}km")
+            log_info(f"Abateri Max: Google={dev_google_m}m | Custom={dev_custom_km}km")
+            log_info(f"Keywords: {keywords}")
 
             if not start_txt or not end_txt:
                 log_error("Lipsă puncte start/end.")
@@ -5570,6 +5605,7 @@ class MainWindow(QMainWindow):
             route = directions[0]
             overview_poly = route['overview_polyline']['points']
             path_points = decode_polyline(overview_poly)
+            log_info(f"Traseu decodat: {len(path_points)} puncte de formă.")
             
             safe_poly = overview_poly.replace('\\', '\\\\')
             self.web_view.page().runJavaScript(f"drawPolyline('{safe_poly}');")
@@ -5593,7 +5629,7 @@ class MainWindow(QMainWindow):
             
             # A. CUSTOM LAYER
             if custom_manager.is_enabled and self.show_custom_checkbox.isChecked():
-                log_info("🔍 Analizez Stratul Custom pe traseu...")
+                log_info("\n--- SCANARE CUSTOM LAYER ---")
                 for cid, cdata in custom_manager.places.items():
                     min_dist = 99999
                     in_corridor = False
@@ -5640,45 +5676,53 @@ class MainWindow(QMainWindow):
                             continue
                             
                         log_file_only(f"   🔎 Keyword '{kw}': {len(results)} candidați brut.")
-                        log_file_only(f"      {'NUME':<35} | {'DIST. PIONEZĂ':<15} | {'ABATERE DRUM':<15} | {'STATUS'}")
-                        log_file_only("      " + "-"*85)
+                        # --- HEADER TABEL ACTUALIZAT ---
+                        log_file_only(f"      {'NUME':<32} | {'RAT.':<4} | {'VOTURI':<6} | {'ABATERE':<10} | {'STATUS'}")
+                        log_file_only("      " + "-"*90)
                         
                         for p in results:
                             pid = p['place_id']
                             if pid in found_places: continue
+                            
                             lat = p['geometry']['location']['lat']; lng = p['geometry']['location']['lng']
-                            rating = p.get('rating', 0); types = p.get('types', [])
-                            name_str = (p['name'][:32] + '..') if len(p['name']) > 32 else p['name']
+                            rating = p.get('rating', 0)
+                            reviews = p.get('user_ratings_total', 0)
+                            types = p.get('types', [])
+                            name_str = (p['name'][:30] + '..') if len(p['name']) > 30 else p['name']
                             
-                            # Filtru Calitate
-                            is_food = any(t in types for t in food_types)
-                            if is_food and rating < 4.0:
-                                log_file_only(f"      {name_str:<35} | -                | -                | ❌ SKIP CALITATE ({rating} < 4.0)")
-                                continue
-                            
-                            dist_to_center = haversine_distance(sp[0], sp[1], lat, lng)
+                            # Calculăm ABATEREA FAȚĂ DE DRUM
                             min_dev = 99999
                             for pp in path_points[::10]: 
                                 d = haversine_distance(pp[0], pp[1], lat, lng)
                                 if d < min_dev: min_dev = d
-                            
+
+                            # Determinare Status
                             status = ""
+                            
+                            # 1. Filtru Calitate
+                            is_food = any(t in types for t in food_types)
+                            if is_food and rating < 4.0:
+                                status = f"❌ SKIP CALITATE ({rating}<4.0)"
+                                # Scriem în log chiar dacă e skip
+                                log_file_only(f"      {name_str:<32} | {rating:<4} | {reviews:<6} | {int(min_dev)}m{' ':<8} | {status}")
+                                continue
+                            
+                            # 2. Filtru Distanță
                             if min_dev <= dev_google_m:
                                 status = "✅ ACCEPTAT"
                                 found_places[pid] = {
                                     'place_id': pid, 'name': p['name'], 'lat': lat, 'lng': lng,
-                                    'rating': rating, 'user_ratings_total': p.get('user_ratings_total', 0),
+                                    'rating': rating, 'user_ratings_total': reviews,
                                     'types': types, 'is_custom': False,
                                     'vicinity': p.get('vicinity', ''),
                                     'opening_hours': p.get('opening_hours', {}),
                                     'geometry': p['geometry'] 
                                 }
-                                # Log success si in consola, ca e important
-                                # log_success(f"   + Găsit: {p['name']} (Abatere {int(min_dev)}m)")
                             else:
-                                status = f"❌ SKIP (> {int(dev_google_m)}m)"
+                                status = f"❌ SKIP DIST. (> {int(dev_google_m)}m)"
                             
-                            log_file_only(f"      {name_str:<35} | {int(dist_to_center)}m            | {int(min_dev)}m            | {status}")
+                            # Scriem rândul în tabel
+                            log_file_only(f"      {name_str:<32} | {rating:<4} | {reviews:<6} | {int(min_dev)}m{' ':<8} | {status}")
 
                     except Exception as e:
                         log_error(f"Err scan '{kw}': {e}")
@@ -5711,7 +5755,6 @@ class MainWindow(QMainWindow):
                 sender_btn.setEnabled(True)
                 sender_btn.setText(original_text)
 
-
     
     # [V46] Funcție pentru restaurarea listei complete când se dă click pe tab-ul Rezultate
     def on_results_tab_clicked(self, index):
@@ -5738,7 +5781,7 @@ class MainWindow(QMainWindow):
 
 def main():
     # --- CURĂȚARE LOGURI VECHI ---
-    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Logs")
+    log_dir = os.path.join(application_path, "Logs")
     if os.path.exists(log_dir):
         try:
             shutil.rmtree(log_dir) # Șterge tot folderul

@@ -1,0 +1,1 @@
+pyinstaller turist_pro_v05.spec
