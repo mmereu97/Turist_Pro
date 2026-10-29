@@ -1,189 +1,190 @@
-# Turist Pro 
+# Turist Pro
 
-Aplicație desktop pentru planificarea rutelor turistice cu integrare Google Maps și scanare automată de obiective de interes.
+Desktop trip planner with Google Maps integration and automatic scanning for points of interest along a route or within a radius.
 
-## 📋 Descriere
+> The user interface is in Romanian. Button names below are given in Romanian, with the English meaning in brackets.
 
-Turist Pro este o aplicație avansată de planificare a călătoriilor care permite utilizatorilor să:
-- Găsească și vizualizeze obiective turistice pe hartă
-- Planifice rute personalizate între multiple destinații
-- Scaneze automat puncte de interes de-a lungul traseului
-- Gestioneze baze de date custom cu locații proprii
-- Exporte rute în format KML pentru GPS
+## 📋 Overview
 
-![Screenshot aplicație](capture.png)
+Turist Pro is a trip-planning application that lets you:
+- find and display points of interest on an interactive map
+- plan custom routes through multiple destinations
+- automatically scan for points of interest along the planned route
+- manage your own database of places (imported from Excel)
+- export routes to KML for GPS devices and apps
 
-## ✨ Funcționalități Principale
+![Turist Pro screenshot](capture.png)
 
-### 🗺️ Interfață Interactivă cu Hartă
-- Vizualizare hartă Google Maps interactivă
-- 4 tipuri de hartă: Roadmap, Satellite, Hybrid, Terrain
-- Marcare puncte prin click sau căutare
-- Drag & drop pentru reordonarea waypoint-urilor
-- Preview vizual al rutei planificate
+## ✨ Main features
 
-### 🎯 Moduri de Căutare
+### 🗺️ Interactive map
+- Interactive Google Maps view
+- 4 map types: Roadmap, Satellite, Hybrid, Terrain
+- Add points by clicking on the map or by searching
+- Drag & drop to reorder waypoints
+- Visual preview of the planned route
 
-#### Mod Radial (Căutare Circulară)
-- Căutare în rază configurabilă (10-200 km)
-- Keywords multiple pentru flexibilitate
-- Filtrare automată după calitate (rating ≥4.0 pentru restaurante)
-- Sortare după distanță sau rating
+### 🎯 Search modes
 
-#### Mod Liniar (Scanare pe Traseu)
-- Scanare automată de-a lungul rutei planificate
-- Configurare interval de scanare (5-50 km)
-- Deviere permisă configurabilă (500m - 10km)
-- Export KML cu toate punctele găsite
-- Logging detaliat în fișiere text
+#### Radial mode (search around a point)
+- Configurable radius (10–200 km)
+- Multiple keywords per search
+- Automatic quality filter (rating ≥ 4.0 for restaurants)
+- Sort by distance or rating
 
-### 📊 Date Custom
-- Import date din Excel (.xlsx)
-- Structură predefinită cu coloane:
-  - Nume, Viețuitori, Hram, Tip, An
-  - Coordonate GPS
-  - Regiune, Arhiepiscopie, Mitropolie
-  - Link-uri web
-- ID-uri unice generate automat
-- Layer vizual separat pe hartă
+#### Linear mode (scan along the route)
+- Automatic scanning along the planned route
+- Configurable scan interval (5–50 km)
+- Configurable allowed deviation from the route (500 m – 10 km)
+- KML export with every point found
+- Detailed logging to text files
 
-### 🔍 Filtrare și Sortare Avansată
-- Filtrare după rating (1-5 stele)
-- Filtrare după număr de recenzii
-- Filtrare după tip (custom/Google)
-- Sortare după distanță sau popularitate
-- Căutare în rezultate
+### 📊 Custom data
+- Import from Excel (.xlsx)
+- Predefined column structure:
+  - name, community size, patron saint (hram), type, year
+  - GPS coordinates
+  - region, archdiocese, metropolis
+  - web links
+- Unique IDs generated automatically
+- Separate visual layer on the map
 
-### 💾 Salvare Stare Aplicație
-- Ultimele rute folosite
-- Preferințe utilizator
-- Keywords favorite
-- Poziția hărții
-- Setări de scanare
+### 🔍 Filtering and sorting
+- Filter by rating (1–5 stars)
+- Filter by number of reviews
+- Filter by source (custom / Google)
+- Sort by distance or popularity
+- Search within the results
 
-## 🛠️ Tehnologii
+### 💾 Saved application state
+- Recently used routes
+- User preferences
+- Favourite keywords
+- Map position
+- Scan settings
+
+## 🛠️ Technologies
 
 - **Python 3.8+**
-- **PySide6** (Qt6) - Interfață grafică
-- **Google Maps API** - Căutare locații și rutare
-- **OpenPyXL** - Import date Excel
-- **googlemaps-python** - Client API Google
+- **PySide6** (Qt 6): desktop GUI
+- **Google Maps Platform**: Maps JavaScript API, Places API, Directions API
+- **googlemaps** (Python client for the Google Maps APIs)
+- **OpenPyXL**: Excel import
+- **python-dotenv**, **requests**
 
-## 📦 Instalare
+## 📦 Installation
 
-### Cerințe
+### Requirements
 ```bash
-pip install PySide6
-pip install googlemaps
-pip install openpyxl
-pip install python-dotenv
-pip install requests
+pip install PySide6 googlemaps openpyxl python-dotenv requests
 ```
 
-### Configurare API Key
+### API key
 
-1. Obține un API Key de la [Google Cloud Console](https://console.cloud.google.com/)
-2. Activează serviciile:
+1. Get an API key from the [Google Cloud Console](https://console.cloud.google.com/).
+2. Enable these services:
    - Maps JavaScript API
    - Places API
    - Directions API
-3. Creează fișier `.env` în directorul aplicației:
+3. Create a `.env` file in the application folder:
 
 ```env
 GOOGLE_MAPS_API_KEY=your_api_key_here
 ```
 
-### Structura Fișierelor
+### File structure
 
 ```
 turist_pro_v05/
-├── turist_pro_v05.py          # Aplicația principală
-├── custom_data_manager.py      # Manager date custom
-├── .env                        # API Key (nu include în Git!)
-├── map_template.html           # Template hartă
-├── Logs/                       # Directorul de loguri (auto-generat)
-└── date_custom.xlsx            # (Opțional) Fișier date custom
+├── turist_pro_v05.py          # main application
+├── custom_data_manager.py     # custom data manager
+├── .env                       # API key (never commit it!)
+├── map_template.html          # map template
+├── Logs/                      # log folder (created automatically)
+└── date_custom.xlsx           # (optional) custom data file
 ```
 
-## 🚀 Utilizare
+## 🚀 Usage
 
-### Pornire Aplicație
+### Start the application
 ```bash
 python turist_pro_v05.py
 ```
 
-### 1. Setare Punct de Plecare
-- **Metoda 1**: Click pe hartă
-- **Metoda 2**: Căutare text în câmpul de sus
-- **Metoda 3**: Click buton "📍 Locație Curentă" (folosește IP geolocation)
+### 1. Set the starting point
+- **Option 1:** click on the map
+- **Option 2:** search in the text field at the top
+- **Option 3:** the "📍 Locație Curentă" button (current location, via IP geolocation)
 
-### 2. Căutare Radială
+### 2. Radial search
 
-1. Setează raza de căutare (slider 10-200 km)
-2. Introdu keywords (ex: "biserică", "mănăstire", "muzeu")
-3. Click "🔍 Căutare Radială"
-4. Examinează rezultatele în tab "Rezultate"
+1. Set the search radius (slider, 10–200 km).
+2. Enter keywords (e.g. "biserică" = church, "mănăstire" = monastery, "muzeu" = museum).
+3. Click "🔍 Căutare Radială" (radial search).
+4. Review the results in the "Rezultate" (results) tab.
 
-### 3. Planificare Rută
+### 3. Route planning
 
-1. Adaugă waypoint-uri (puncte intermediare):
-   - Click "Adaugă Waypoint" și caută locația
-   - Sau click direct pe hartă (mod adăugare waypoint activ)
-2. Reordonează prin drag & drop în listă
-3. Șterge puncte nedorite cu butonul "🗑️"
-4. Click "🎯 Calculează Rută" pentru preview
-5. Click "🚀 SCANARE LINIARĂ" pentru căutare pe traseu
+1. Add waypoints:
+   - click "Adaugă Waypoint" (add waypoint) and search for the place,
+   - or click directly on the map while waypoint mode is active.
+2. Reorder them by drag & drop in the list.
+3. Remove unwanted points with the "🗑️" button.
+4. Click "🎯 Calculează Rută" (calculate route) for a preview.
+5. Click "🚀 SCANARE LINIARĂ" (linear scan) to search along the route.
 
-### 4. Scanare Liniară (Avansată)
+### 4. Linear scan (advanced)
 
-Configurare parametri:
-- **Interval Scanare**: Distanța între puncte de căutare (5-50 km)
-- **Deviere Google**: Cât de departe de traseu să caute în Google (500m-10km)
-- **Deviere Custom**: Cât de departe să includă locații custom (0.5-20km)
+Parameters:
+- **Scan interval:** distance between search points (5–50 km)
+- **Google deviation:** how far from the route to search Google Places (500 m – 10 km)
+- **Custom deviation:** how far from the route to include custom places (0.5–20 km)
 
-După scanare:
-- Rezultatele apar în tab "Rezultate"
-- Se generează fișier de log detaliat în `Logs/`
-- Butonul "💾 EXPORT KML" devine activ
-- Toate punctele sunt marcate vizual pe hartă
+After the scan:
+- results appear in the "Rezultate" tab
+- a detailed log file is written to `Logs/`
+- the "💾 EXPORT KML" button becomes active
+- every point is marked on the map
 
-### 5. Export KML
+### 5. KML export
 
-După o scanare liniară:
-1. Click "💾 EXPORT KML"
-2. Alege locația și numele fișierului
-3. Fișierul conține:
-   - Traseu complet
-   - Toate waypoint-urile
-   - Toate locațiile găsite
-   - Informații detaliate (rating, reviews, tipuri)
+After a linear scan:
+1. Click "💾 EXPORT KML".
+2. Choose the folder and file name.
+3. The file contains:
+   - the full route
+   - all waypoints
+   - all places found
+   - details for each place (rating, number of reviews, types)
 
-## 📋 Format Date Custom Excel
+## 📋 Custom data Excel format
 
-### Structura Obligatorie
+### Required structure
 
-| Coloană | Index | Nume Header | Format | Exemplu |
-|---------|-------|-------------|--------|---------|
-| C | 2 | Nume | Text | "Biserica Sf. Nicolae" |
-| D | 3 | Viețuitori | Număr | "5000" |
-| E | 4 | Hram | Text | "Sf. Nicolae" |
-| F | 5 | Tip | Text | "Biserică" |
-| G | 6 | An | Număr/Text | "1850" |
-| H | 7 | Coordonate | "lat,lng" | "47.1585, 27.6014" |
-| I | 8 | Regiune | Text | "Moldova" |
-| J | 9 | Arhiepiscopie | Text | "Iași" |
-| K | 10 | Mitropolie | Text | "Moldovei" |
+The column headers stay in Romanian, because the application reads them that way.
 
-### Reguli Importante
-- Prima linie este header (se ignoră)
-- Coordonatele pot fi separate cu `,` sau `;`
-- Celulele goale se completează automat cu "-"
-- Link-uri web: Adăugă hyperlink pe celula din coloana C (Nume)
-- ID-uri unice sunt generate automat pe baza numelui + coordonate
+| Column | Index | Header | Meaning | Format | Example |
+|--------|-------|--------|---------|--------|---------|
+| C | 2 | Nume | name | text | "Biserica Sf. Nicolae" |
+| D | 3 | Viețuitori | community size | number | "5000" |
+| E | 4 | Hram | patron saint | text | "Sf. Nicolae" |
+| F | 5 | Tip | type | text | "Biserică" |
+| G | 6 | An | year | number/text | "1850" |
+| H | 7 | Coordonate | coordinates | "lat,lng" | "47.1585, 27.6014" |
+| I | 8 | Regiune | region | text | "Moldova" |
+| J | 9 | Arhiepiscopie | archdiocese | text | "Iași" |
+| K | 10 | Mitropolie | metropolis | text | "Moldovei" |
 
-### Exemplu Rând Valid
+### Rules
+- The first row is the header and is skipped.
+- Coordinates can be separated by `,` or `;`.
+- Empty cells are filled automatically with "-".
+- Web links: put a hyperlink on the cell in column C (name).
+- Unique IDs are generated from name + coordinates.
+
+### Example of a valid row
 ```
-C: Biserica Vovidenia (cu hyperlink către site)
+C: Biserica Vovidenia (with a hyperlink to its website)
 D: 3500
 E: Sf. Maria
 F: Biserică
@@ -194,48 +195,48 @@ J: Iași
 K: Moldovei și Bucovinei
 ```
 
-## ⚙️ Configurări Avansate
+## ⚙️ Advanced settings
 
-### Filtre Calitate
-- Restaurante/Cafenele/Baruri: rating minim 4.0 automat
-- Alte categorii: fără filtru de rating
-- Filtrare după număr recenzii disponibilă în UI
+### Quality filters
+- Restaurants / cafés / bars: minimum rating 4.0, applied automatically
+- Other categories: no rating filter
+- Filtering by number of reviews is available in the UI
 
-### Parametri de Scanare
+### Scan parameters
 ```python
-# Distanța maximă pentru "în apropiere" în mod radial
-MAX_RADIAL_SEARCH = 200_000  # metri
+# Maximum distance for "nearby" in radial mode
+MAX_RADIAL_SEARCH = 200_000  # metres
 
-# Interval implicit între scanări
+# Default interval between scan points
 DEFAULT_SCAN_STEP = 20  # km
 
-# Deviere implicită de la traseu
-DEFAULT_DEVIATION_GOOGLE = 3000  # metri
-DEFAULT_DEVIATION_CUSTOM = 5000  # metri
+# Default deviation from the route
+DEFAULT_DEVIATION_GOOGLE = 3000  # metres
+DEFAULT_DEVIATION_CUSTOM = 5000  # metres
 ```
 
-## 📁 Structura Log-urilor
+## 📁 Logs
 
-Fișierele de log se generează automat la fiecare scanare:
+A log file is written automatically for every scan:
 
 ```
 Logs/
 └── scan_2025-01-28_143522.txt
 ```
 
-### Conținut Log
-- Timestamp pentru fiecare acțiune
-- Parametrii de scanare folosiți
-- Număr de puncte de scanare
-- Tabel detaliat pentru fiecare candidat:
-  - Nume (max 32 caractere)
-  - Rating
-  - Număr voturi
-  - Abatere de la traseu
-  - Status (ACCEPTAT/SKIP)
-- Statistici finale
+### Log contents
+- timestamp for every action
+- scan parameters used
+- number of scan points
+- a detailed table for each candidate:
+  - name (max. 32 characters)
+  - rating
+  - number of votes
+  - deviation from the route
+  - status (accepted / skipped)
+- final statistics
 
-### Exemplu Fragment Log
+### Sample log (the log text is in Romanian)
 ```
 [14:35:25] [INFO] 📍 Puncte de scanare (Pioneze): 8
 [14:35:26] [DATA] 📍 PUNCT SCANARE 1/8 ((47.158, 27.601))
@@ -246,9 +247,9 @@ Logs/
 [14:35:26] [DATA]       Bistro La Castel               | 3.8  | 89     | 890m       | ❌ SKIP CALITATE (3.8<4.0)
 ```
 
-## 🔧 Dezvoltare
+## 🔧 Development
 
-### Crearea Executabilului (.exe)
+### Building the executable (.exe)
 
 ```bash
 pip install pyinstaller
@@ -261,66 +262,60 @@ pyinstaller --onefile --windowed \
     turist_pro_v05.py
 ```
 
-### Funcții Ajutătoare Principale
+### Main helper functions
 
 ```python
-# Calcul distanță între două coordonate
+# Distance between two coordinates
 haversine_distance(lat1, lon1, lat2, lon2) -> float
 
-# Decodare polyline Google
+# Decode a Google polyline
 decode_polyline(polyline_str) -> List[Tuple[float, float]]
 
-# Distanță punct-linie
+# Distance from a point to a line segment
 point_line_distance(point, start, end) -> float
 ```
 
 ## 🐛 Troubleshooting
 
-### Eroare: "Invalid API Key"
-- Verifică fișierul `.env`
-- Asigură-te că API-urile sunt activate în Google Cloud Console
-- Verifică restricțiile de key (IP, referrer)
+### "Invalid API Key"
+- Check the `.env` file.
+- Make sure the APIs are enabled in the Google Cloud Console.
+- Check the key restrictions (IP, referrer).
 
-### Hartă nu se încarcă
-- Verifică conexiunea la internet
-- Verifică consolele JavaScript (meniul Debug)
-- Regenerează hartă (Meniu → Regenerare Hartă)
+### The map does not load
+- Check your internet connection.
+- Check the JavaScript console (Debug menu).
+- Regenerate the map (menu → Regenerare Hartă).
 
-### Date Custom nu apar
-- Verifică structura Excel (coloane corecte)
-- Verifică formatul coordonatelor (lat,lng)
-- Verifică log-urile pentru erori de import
+### Custom data does not appear
+- Check the Excel structure (correct columns).
+- Check the coordinate format (lat,lng).
+- Check the logs for import errors.
 
-### Scanare Liniară lentă
-- Reduce numărul de keywords
-- Mărește intervalul de scanare
-- Reduce raza de scanare
+### Linear scan is slow
+- Use fewer keywords.
+- Increase the scan interval.
+- Reduce the search radius.
 
 ## 📝 Changelog
 
-### v0.5 (Curent)
-- ✅ Sistem de logging avansat (consolă + fișier)
-- ✅ Tabel detaliat pentru fiecare candidat în scan
-- ✅ Export KML funcțional
-- ✅ Manager date custom cu 3 coloane noi
-- ✅ Filtrare calitate automată
-- ✅ UI îmbunătățit cu tabs și iconițe
-- ✅ Salvare/restaurare stare aplicație
+### v0.5 (current)
+- ✅ Logging to console and file
+- ✅ Detailed table for every scan candidate
+- ✅ Working KML export
+- ✅ Custom data manager with 3 new columns
+- ✅ Automatic quality filtering
+- ✅ Improved UI with tabs and icons
+- ✅ Saving and restoring the application state
 
-## 📄 Licență
+## 📄 License
 
-Acest proiect este proprietate privată. Toate drepturile rezervate.
+Private project. All rights reserved.
 
-## 👨‍💻 Autor
+## 👨‍💻 Author
 
-Dezvoltat pentru planificarea rutelor turistice și descoperirea obiectivelor de interes în România.
-
-## 📞 Suport
-
-Pentru probleme sau sugestii, consultă log-urile generate sau contactează dezvoltatorul.
+**Mihai Mereu** ([github.com/mmereu97](https://github.com/mmereu97)). Built to plan tourist routes and discover points of interest across Romania, including its monasteries and churches.
 
 ---
 
-**Versiune**: 0.5  
-**Data**: Noiembrie 2024  
-**Status**: Production-Ready
+**Version:** 0.5 · **Date:** November 2024
